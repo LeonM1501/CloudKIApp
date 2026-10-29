@@ -814,6 +814,7 @@ hr {
   cursor: pointer;
 }
 .remote-workspace {
+  position: relative;
   display: flex;
   flex: 1;
   min-width: 0;
@@ -885,6 +886,18 @@ hr {
   padding: 7px 12px;
   font-size: 10px;
   color: var(--muted);
+}
+.remote-keyboard {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+  font-size: 16px;
 }
 .terminal-wrap {
   display: flex;
