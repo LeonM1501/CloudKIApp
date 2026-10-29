@@ -1,0 +1,39 @@
+{
+  "name": "cloud-gptx-antigravity-bridge",
+  "version": "1.0.0",
+  "description": "Cloud-GPTX-Antigravity-Codex-OpenCode Bridge & iPad App with Linux Browser, Unity & Blender Single-Window Streamer",
+  "type": "module",
+  "scripts": {
+    "dev:server": "tsx server/index.ts",
+    "dev:client": "vite --host",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/ios": "^8.6.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "lucide-react": "^0.511.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "ssh2": "^1.16.0",
+    "ws": "^8.18.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.0",
+    "@tailwindcss/vite": "^4.1.7",
+    "@types/cors": "^2.8.18",
+    "@types/express": "^5.0.2",
+    "@types/react": "^19.1.5",
+    "@types/react-dom": "^19.1.5",
+    "@types/ssh2": "^1.15.2",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^4.5.0",
+    "concurrently": "^9.1.2",
+    "tailwindcss": "^4.1.7",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  }
+}

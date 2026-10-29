@@ -1,0 +1,67 @@
+name: Build Unsigned iPadOS IPA (Sideloadly / AltStore / SideStore)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-ipad-ipa:
+    name: Build CloudKIBridge-iPadOS.ipa
+    runs-on: macos-15
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Dependencies & Build iPad Web Bundle
+        run: |
+          npm install
+          npm run build
+
+      - name: Sync Capacitor iOS Project
+        run: |
+          if [ ! -d "ios" ]; then
+            npx cap add ios
+          fi
+          npx cap sync ios
+
+      - name: Configure iPadOS Fullscreen, Stage Manager & ATS in Info.plist
+        run: |
+          PLIST="ios/App/App/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :UIRequiresFullScreen bool false" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Set :UIRequiresFullScreen false" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true" "$PLIST" 2>/dev/null || true
+
+      - name: Resolve Swift Packages & Compile Unsigned iPadOS App (Xcode)
+        run: |
+          xcodebuild -resolvePackageDependencies -project ios/App/App.xcodeproj -scheme App
+          xcodebuild -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build_output \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            clean build
+
+      - name: Package .app into Sideloadable CloudKIBridge-iPadOS.ipa
+        run: |
+          mkdir -p Payload
+          cp -r build_output/Build/Products/Release-iphoneos/App.app Payload/
+          zip -r9 CloudKIBridge-iPadOS.ipa Payload
+
+      - name: Upload CloudKIBridge-iPadOS.ipa Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CloudKIBridge-iPadOS-IPA
+          path: CloudKIBridge-iPadOS.ipa
+          retention-days: 30
