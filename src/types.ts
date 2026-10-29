@@ -63,6 +63,10 @@ export interface Project {
   id: string;
   name: string;
   path: string;
+  repository?: string;
+  branch?: string;
+  syncing?: boolean;
+  syncError?: string;
 }
 export interface State {
   version: 2;

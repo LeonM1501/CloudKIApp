@@ -24,7 +24,9 @@ Domain und Zertifikatsvoraussetzungen müssen vorher erfüllt sein. Die Bridge s
 
 Verwende einen dedizierten unprivilegierten Linux-Benutzer für deine Entwicklungsprojekte. Dessen Rechte gelten auch für KI und Terminal. Root wird für Remote-Desktop-Starts abgelehnt. Für echte Isolation voneinander unabhängiger Besitzer sind getrennte Unix-Benutzer/VMs erforderlich.
 
-Installiere die gewünschten offiziellen Clients. Sie müssen im nicht-interaktiven SSH-PATH verfügbar sein, nicht nur in einer lokalen Shell mit aktivem nvm-Profil:
+Die App prüft beim Klick auf „Anmelden“ den gewünschten offiziellen Client und installiert ihn bei Bedarf ohne sudo. Codex und OpenCode landen unter `~/.local/share/cloudki/clients/`, Antigravity unter `~/.local/bin/`. Diese Verzeichnisse werden auch bei nicht-interaktiven SSH-Aufrufen in den PATH aufgenommen. Eine vorhandene, erreichbare Installation wird wiederverwendet. Weitere Accounts erhalten eigene Profile und benötigen keine erneute Installation. Node.js/npm und für Antigravity curl müssen vorhanden sein.
+
+Manuell kannst du vorhandene Clients mit diesen Befehlen prüfen; installierte Benutzer-Verzeichnisse müssen dabei im PATH stehen:
 
 ```sh
 command -v codex
@@ -33,7 +35,7 @@ command -v agy
 node --version
 ```
 
-Installationsanleitungen: [Codex](https://developers.openai.com/codex/cli), [OpenCode](https://opencode.ai/docs/), [Antigravity](https://antigravity.google/docs/install?tab=cli). Für das Browser-MCP-Skript wird auch auf diesem Host Node.js 22+ benötigt. Die Bridge installiert keine KI-Clients stillschweigend und übernimmt keine lokalen Anmeldungen vom Entwickler-PC.
+Installationsanleitungen: [Codex](https://developers.openai.com/codex/cli), [OpenCode](https://opencode.ai/docs/), [Antigravity](https://antigravity.google/docs/getting-started?tab=cli). Für das Browser-MCP-Skript wird auch auf diesem Host Node.js 22+ benötigt. Die Installation beginnt bewusst mit „Anmelden“; lokale Anmeldungen vom Entwickler-PC werden nicht übernommen. Die App fragt den Installationsstatus regelmäßig ab, damit längere Downloads nicht an einem HTTP-Zeitlimit scheitern. Fehlgeschlagene Installationen können über „Anmelden“ erneut versucht werden.
 
 Im Onboarding SSH-Host, Port, Benutzer und Passwort oder unverschlüsselten privaten Schlüssel eingeben. Passphrase-geschützte Schlüssel und SSH-Agent-Forwarding sind in dieser Version nicht angebunden. Zugangsdaten werden nicht auf Platte gespeichert.
 
@@ -43,7 +45,7 @@ Den beim ersten Verbindungsversuch angezeigten Host-Fingerabdruck über einen be
 
 - Codex: Account hinzufügen → „Anmelden“ → echten Device-Code auf der angegebenen Anbieter-Seite eingeben → „Prüfen“. CLI-Funktionen und Auth-Verfügbarkeit hängen von Version/Account ab.
 - OpenCode: Account hinzufügen → „Anmelden“ öffnet `opencode auth login` im profilbezogenen Terminal. Anbieter wählen und den offiziellen Login abschließen → schließen → „Prüfen“.
-- Antigravity: Account hinzufügen → „Anmelden“ öffnet `agy` im profilbezogenen Terminal. Remote-Login-URL/Code der CLI verwenden → schließen → „Prüfen“. Ein geladener Modellkatalog wird als „Client bereit“, nicht als bestätigte Anmeldung dargestellt.
+- Antigravity: Account hinzufügen → „Anmelden“ → „Google-Anmeldung öffnen“ → bei Google anmelden → den im Browser angezeigten Bestätigungscode in der App einfügen → „Code bestätigen“ → „Account prüfen und schließen“. Die CLI-Anmeldesitzung bleibt beim Wechsel zum Browser auf dem Server erhalten und läuft nach zehn Minuten ab. Jeder Account verwendet ein eigenes Konfigurationsverzeichnis und einen eigenen Credential-Scope. Ein geladener Modellkatalog wird als „Client bereit“, nicht als bestätigte Anmeldung dargestellt.
 
 Jeder Account erhält eine zufällige ID und ein separates Provider-Profil. Vor mehreren Accounts desselben Anbieters live kontrollieren, dass unterschiedliche Identitäten angezeigt/verwendet werden. Ambient API-Key-Variablen werden im Launcher entfernt; der jeweilige Client verwendet sein Profil.
 
@@ -52,6 +54,10 @@ Codex-Quoten werden über die offizielle API gelesen. Für Antigravity `/usage` 
 ## 4. Projekte, Berechtigungen und Dateien
 
 Projektordner werden tatsächlich auf dem SSH-Server durchsucht. Der Dialog legt keine fiktiven Ordner an. Ohne Projekt arbeitet der Agent in `~/.cloudki/workspace`.
+
+Alternativ im selben Feld eine GitHub-Repo-URL eingeben. Das Repo wird unter `~/.cloudki/projects/OWNER/REPO` geklont. Über „GitHub verbinden“ wird bei Bedarf die offizielle GitHub CLI installiert und deren Geräte-Anmeldung im Terminal geöffnet. Für private Repos und automatische Uploads diese Anmeldung einmal abschließen; Schreibrechte und Branch-Regeln des Repositorys gelten weiterhin. Git muss auf dem SSH-Server vorhanden sein. Die Bridge verwendet die GitHub-Anmeldung auf dem SSH-Server, nicht die deines Entwickler-PCs.
+
+Vor einem schreibenden KI-Auftrag wird ein sauberer Arbeitsstand per Fast-Forward aktualisiert. Nach erfolgreichem Abschluss werden nicht ignorierte Änderungen committed und ohne Force-Push hochgeladen. Fehlgeschlagene/abgebrochene Aufträge und Nur-Lesen-Aufträge lösen keinen automatischen Upload aus. Bei lokalen Reständerungen zuerst „Änderungen hochladen“ verwenden. Bei Git-Konflikten den Stand im Server-Terminal prüfen; die Bridge überschreibt weder Dateien noch Remote-Historie, um einen Upload zu erzwingen.
 
 Codex unterstützt Nachfragen, projektbezogenes Arbeiten, nur Lesen und Vollzugriff über seine Sandbox-/Approval-Parameter. OpenCode wird mit `permission: ask` gestartet; die Bridge beantwortet seine ACP-Freigaben. Antigravity-Headless erfordert hier expliziten Vollzugriff, weil seine interaktive Freigabeoberfläche nicht in dieses Chat-Protokoll eingebunden ist. Für vorsichtige Arbeit stattdessen die interaktive CLI verwenden.
 

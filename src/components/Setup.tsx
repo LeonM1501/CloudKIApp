@@ -14,6 +14,7 @@ import { PROVIDERS } from "../types";
 import { ApiError, type BridgeApi } from "../api";
 import { Modal } from "./Modal";
 import { Terminal } from "./Terminal";
+import { AntigravityLogin } from "./AntigravityLogin";
 
 export function Accounts({
   api,
@@ -30,6 +31,8 @@ export function Accounts({
     null,
   );
   const [terminal, setTerminal] = useState<Account | null>(null);
+  const [preparing, setPreparing] = useState<string | null>(null);
+  const [antigravity, setAntigravity] = useState<Account | null>(null);
   const act = async (key: string, job: () => Promise<void>) => {
     setBusy(key);
     setError("");
@@ -53,7 +56,7 @@ export function Accounts({
     <>
       <p className="subtle">
         Jeder Account hat ein eigenes Profil auf deinem Server. Die offiziellen
-        Clients müssen dort installiert sein. Ein Modellkatalog allein bestätigt
+        Clients werden beim Anmelden bei Bedarf installiert. Ein Modellkatalog allein bestätigt
         noch keine Modellberechtigung.
       </p>
       <div className="provider-actions">
@@ -107,6 +110,18 @@ export function Accounts({
                 disabled={Boolean(busy)}
                 onClick={() =>
                   void act(account.id, async () => {
+                    setPreparing(account.id);
+                    try {
+                      while (true) {
+                        const { ready } = await api.request<{ ready: boolean }>(
+                          `/api/accounts/${account.id}/prepare`, "POST",
+                        );
+                        if (ready) break;
+                        await new Promise((done) => setTimeout(done, 1000));
+                      }
+                    } finally {
+                      setPreparing(null);
+                    }
                     if (account.provider === "codex")
                       setLogin(
                         await api.request(
@@ -114,6 +129,7 @@ export function Accounts({
                           "POST",
                         ),
                       );
+                    else if (account.provider === "antigravity") setAntigravity(account);
                     else setTerminal(account);
                   })
                 }
@@ -123,7 +139,7 @@ export function Accounts({
                 ) : (
                   <TerminalIcon size={15} />
                 )}
-                Anmelden
+                {preparing === account.id ? "Client wird vorbereitet …" : "Anmelden"}
               </button>
               <button
                 disabled={Boolean(busy)}
@@ -192,6 +208,7 @@ export function Accounts({
           </p>
         </Modal>
       )}
+      {antigravity && <AntigravityLogin api={api} accountId={antigravity.id} refresh={refresh} onClose={() => setAntigravity(null)} />}
       {terminal && (
         <Modal
           title={`${terminal.label} · Anmeldung`}
@@ -220,10 +237,18 @@ export function Setup({
 }: {
   api: BridgeApi;
   state: State;
-  refresh: () => Promise<void>;
+  refresh: (updated?: State) => Promise<void>;
   onClose?: () => void;
 }) {
-  const [step, setStep] = useState(state.profile.onboardingComplete ? 1 : 0);
+  const [step, setStep] = useState(
+    state.profile.onboardingComplete
+      ? 1
+      : state.connection?.connected
+        ? 2
+        : state.profile.username
+          ? 1
+          : 0,
+  );
   const [name, setName] = useState(state.profile.username);
   const [host, setHost] = useState(state.connection?.host ?? "");
   const [port, setPort] = useState(state.connection?.port ?? 22);
@@ -239,7 +264,7 @@ export function Setup({
     setBusy(true);
     setError("");
     try {
-      await api.request("/api/server/connect", "POST", {
+      const updated = await api.request<State>("/api/server/connect", "POST", {
         host: host.trim(),
         port,
         username: user,
@@ -250,7 +275,8 @@ export function Setup({
       setPassword("");
       setKey("");
       setFingerprint("");
-      await refresh();
+      await refresh(updated);
+      setStep(2);
     } catch (error) {
       setError((error as Error).message);
       if (error instanceof ApiError && error.details?.fingerprint) {

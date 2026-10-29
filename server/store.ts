@@ -32,6 +32,11 @@ export class Store {
           "Unbekanntes Datenformat. state.json sichern und Migration prüfen.",
         );
       this.state = data;
+      for (const project of this.state.projects) {
+        if (project.syncing)
+          project.syncError = "Bridge wurde während des GitHub-Uploads neu gestartet. Upload erneut prüfen.";
+        project.syncing = false;
+      }
       if (this.state.connection) this.state.connection.connected = false;
       for (const account of this.state.accounts) {
         account.status = "disconnected";

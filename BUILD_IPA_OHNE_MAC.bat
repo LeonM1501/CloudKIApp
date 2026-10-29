@@ -1,46 +1,47 @@
 @echo off
+setlocal
 chcp 65001 >nul
+cd /d "%~dp0"
 echo ============================================================================
-echo   CLOUD-KI BRIDGE - AUTOMATISCHER .IPA BUILDER OHNE MAC (GITHUB CLOUD MAC)
+echo   CLOUD-KI BRIDGE - IPA BUILDER MIT GITHUB ACTIONS
 echo ============================================================================
 echo.
-echo Da Apple Xcode nur auf macOS erlaubt, baut dieses Skript deine .ipa-Datei
-echo kostenlos ueber die GitHub Actions macOS-Cloud-Server!
+echo GitHub Actions baut eine unsignierte IPA auf einem macOS-Runner.
+echo Gib die URL deines GitHub-Repositorys ein.
 echo.
-echo 1. Erstelle auf https://github.com/new ein neues (leeres) Repository
-echo    (z.B. "CloudKIApp" - kann privat oder oeffentlich sein).
-echo 2. Kopiere die URL deines neuen GitHub-Repos (z.B. https://github.com/DEIN_NAME/CloudKIApp.git)
-echo.
-set /p REPO_URL="Fuege hier deine GitHub-Repo-URL ein und druecke ENTER: "
+set "REPO_URL=%~1"
+if not defined REPO_URL set /p "REPO_URL=GitHub-Repo-URL: "
+if not defined REPO_URL goto error
 
-if "%REPO_URL%"=="" (
-    echo Keine URL eingegeben. Abbruch.
-    pause
-    exit /b
+echo [1/3] Bereite lokales Git-Repository vor...
+git init || goto error
+git branch -m main || goto error
+git add . || goto error
+git diff --cached --quiet
+if errorlevel 1 (
+    git commit -m "Build CloudKIBridge iPadOS IPA" || goto error
 )
 
+echo [2/3] Verbinde mit GitHub...
+git remote get-url origin >nul 2>nul
+if errorlevel 1 (
+    git remote add origin "%REPO_URL%" || goto error
+) else (
+    git remote set-url origin "%REPO_URL%" || goto error
+)
+
+echo [3/3] Lade Code hoch und starte den IPA-Workflow...
+git push -u origin main || goto error
 echo.
-echo [1/3] Bereite lokales Git-Repository vor...
-git init
-git config user.name "xLeonTTV"
-git config user.email "xleonttv@users.noreply.github.com"
-git branch -M main
-git add .
-git commit -m "Build CloudKIBridge iPadOS IPA" 2>nul
+echo Upload erfolgreich. Der IPA-Build laeuft jetzt in GitHub Actions.
+echo Warte dort auf einen erfolgreichen Build und lade unter Artifacts
+echo das Paket CloudKIBridge-iPadOS-IPA herunter.
+echo Die IPA muss vor der Installation z.B. mit Sideloadly signiert werden.
+if "%~1"=="" pause
+exit /b 0
 
-echo [2/3] Verbinde mit GitHub (%REPO_URL%)...
-git remote remove origin 2>nul
-git remote add origin %REPO_URL%
-
-echo [3/3] Lade Code hoch -> GitHub macOS Runner startet sofort den Xcode .ipa Build!
-git push -u origin main --force
-
+:error
 echo.
-echo ============================================================================
-echo FERTIG!
-echo Oeffne jetzt dein GitHub-Repository im Browser, klicke oben auf den Tab
-echo "Actions" -> nach ca. 2-3 Minuten kannst du dort unten unter "Artifacts"
-echo die fertige Datei "CloudKIBridge-iPadOS-IPA" (.ipa) herunterladen und mit
-echo Sideloadly, AltStore oder SideStore auf dein iPad installieren!
-echo ============================================================================
-pause
+echo FEHLER: Upload nicht abgeschlossen. Bitte die Git-Fehlermeldung oben pruefen.
+if "%~1"=="" pause
+exit /b 1

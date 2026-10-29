@@ -2,6 +2,7 @@ import ssh2, { type Client, type ClientChannel, type SFTPWrapper } from "ssh2";
 import { createHash } from "node:crypto";
 import type { Connection } from "../src/types.ts";
 import { absolutePath, HttpError, shellQuote, text } from "./validation.ts";
+import { clientPath } from "./clients.ts";
 
 export class Remote {
   client: Client | null = null;
@@ -95,8 +96,11 @@ export class Remote {
           { fingerprint: seen, changed: Boolean(fingerprint) },
         );
       throw new HttpError(
-        502,
-        `SSH-Verbindung fehlgeschlagen: ${(error as Error).message}`,
+        // Tunnel-Proxys ersetzen 502-Antworten und verschlucken dabei JSON und CORS.
+        422,
+        (error as { level?: string }).level === "client-authentication"
+          ? "SSH-Anmeldung abgelehnt. Benutzer und Zugangsdaten prüfen. Wenn der Server keine Passwörter erlaubt, unter SSH-Schlüssel den privaten Schlüssel verwenden."
+          : `SSH-Verbindung fehlgeschlagen: ${(error as Error).message}`,
       );
     } finally {
       this.connecting = false;
@@ -231,9 +235,11 @@ export class Remote {
   }
   async accountCommand(accountId: string, command: string) {
     const directory = this.accountDirectory(accountId);
-    await this.run(`umask 077; mkdir -p -- ${shellQuote(directory)}`);
+    await this.run(
+      `umask 077; mkdir -p -- ${["codex", "gemini", "config", "data", "state"].map((name) => shellQuote(`${directory}/${name}`)).join(" ")}`,
+    );
     const q = shellQuote;
     // Separate profiles are not an OS sandbox. Deploy one Unix user per owner.
-    return `env -u OPENAI_API_KEY -u CODEX_API_KEY -u GEMINI_API_KEY -u GOOGLE_API_KEY -u ANTHROPIC_API_KEY -u GOOGLE_APPLICATION_CREDENTIALS -u OPENCODE_AUTH_JSON CODEX_HOME=${q(directory + "/codex")} GEMINI_HOME=${q(directory + "/gemini")} XDG_CONFIG_HOME=${q(directory + "/config")} XDG_DATA_HOME=${q(directory + "/data")} XDG_STATE_HOME=${q(directory + "/state")} ${command}`;
+    return `export PATH=${clientPath}; env -u OPENAI_API_KEY -u CODEX_API_KEY -u GEMINI_API_KEY -u GOOGLE_API_KEY -u ANTHROPIC_API_KEY -u GOOGLE_APPLICATION_CREDENTIALS -u OPENCODE_AUTH_JSON CODEX_HOME=${q(directory + "/codex")} GEMINI_HOME=${q(directory + "/gemini")} ANTIGRAVITY_CONFIG_REL_DIR=${q(`.cloudki/accounts/${accountId}/gemini`)} ANTIGRAVITY_CREDENTIAL_SCOPE=${q(`cloudki-${accountId}`)} XDG_CONFIG_HOME=${q(directory + "/config")} XDG_DATA_HOME=${q(directory + "/data")} XDG_STATE_HOME=${q(directory + "/state")} ${command}`;
   }
 }

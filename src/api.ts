@@ -25,6 +25,10 @@ export class BridgeApi {
       },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(60000),
+    }).catch(() => {
+      throw new Error(
+        "Die Bridge ist nicht erreichbar oder liefert keine für die App lesbare Antwort. Internetverbindung und Bridge-Adresse prüfen und erneut versuchen.",
+      );
     });
     const result = await response
       .json()

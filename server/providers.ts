@@ -13,6 +13,8 @@ import type {
 import { Remote } from "./ssh.ts";
 import { Rpc } from "./rpc.ts";
 import { HttpError, shellQuote as q } from "./validation.ts";
+import { installClientCommand } from "./clients.ts";
+import { antigravityLoginUrl } from "../src/antigravity-login.ts";
 
 export function quotaWindows(result: any): Quota[] {
   const buckets = result.rateLimitsByLimitId ?? { codex: result.rateLimits };
@@ -65,6 +67,11 @@ interface Run {
 }
 type Emit = (event: string, data: unknown) => void;
 export class Providers {
+  private agyLogins = new Map<string, {
+    channel?: ClientChannel; output: string; selected: boolean; url?: string;
+    sent: boolean; error?: string; finished: boolean; timer: ReturnType<typeof setTimeout>;
+  }>();
+  private installations = new Map<Account["provider"], { ready: boolean; error?: string }>();
   private runtimes = new Map<string, Promise<Runtime>>();
   private runs = new Map<string, Run>();
   private pending = new Map<
@@ -79,6 +86,24 @@ export class Providers {
     readonly remote: Remote,
     readonly emit: Emit,
   ) {}
+  prepare(account: Account) {
+    let job = this.installations.get(account.provider);
+    if (!job) {
+      job = { ready: false };
+      this.installations.set(account.provider, job);
+      const current = job;
+      void this.remote.run(installClientCommand(account.provider), 240000).then(
+        () => { current.ready = true; },
+        (error: Error) => { current.error = error.message; },
+      );
+    }
+    if (job.error) {
+      this.installations.delete(account.provider);
+      throw new HttpError(422, `Client konnte nicht vorbereitet werden: ${job.error}`);
+    }
+    if (job.ready) this.installations.delete(account.provider);
+    return { ready: job.ready };
+  }
   get busy() {
     return this.runs.size > 0;
   }
@@ -89,6 +114,8 @@ export class Providers {
     return [...this.pending.values()].map((value) => value.approval);
   }
   close() {
+    for (const id of this.agyLogins.keys()) this.cancelLogin(id);
+    this.installations.clear();
     for (const run of this.runs.values()) run.cancel();
     for (const runtime of this.runtimes.values())
       void runtime.then((value) => value.rpc.close()).catch(() => {});
@@ -303,6 +330,7 @@ export class Providers {
     return account;
   }
   async login(account: Account) {
+    if (account.provider === "antigravity") return this.agyLogin(account);
     if (account.provider !== "codex")
       throw new HttpError(
         400,
@@ -323,6 +351,56 @@ export class Providers {
       throw new Error("Unsichere Login-URL abgelehnt");
     account.login = { url: url.href, code: result.userCode };
     return account.login;
+  }
+  private agyLogin(account: Account) {
+    let session = this.agyLogins.get(account.id);
+    if (!session) {
+      const timer = setTimeout(() => this.cancelLogin(account.id), 10 * 60_000);
+      timer.unref();
+      session = { output: "", selected: false, sent: false, finished: false, timer };
+      this.agyLogins.set(account.id, session);
+      const current = session;
+      void (async () => {
+        const channel = await this.remote.open(await this.remote.accountCommand(account.id, "agy"), true);
+        if (this.agyLogins.get(account.id) !== current) { channel.end(); return; }
+        current.channel = channel;
+        channel.setWindow(60, 160, 0, 0);
+        const output = (bytes: Buffer) => {
+          current.output = (current.output + bytes.toString()).slice(-60000);
+          if (!current.selected && current.output.includes("Select login method:") && current.output.includes("Google OAuth")) {
+            current.selected = true;
+            channel.write("\r");
+          }
+          current.url = antigravityLoginUrl(current.output) ?? current.url;
+          if (/invalid_grant|authentication failed|invalid (?:authorization )?code/i.test(bytes.toString()))
+            current.error = "Google hat den Code abgelehnt. Anmeldung schließen und erneut starten.";
+        };
+        channel.on("data", output);
+        channel.stderr.on("data", output);
+        channel.on("error", (error: Error) => { current.error = error.message; });
+        channel.on("close", (code: number) => {
+          current.finished = true;
+          if (code) current.error = "Antigravity-Anmeldung wurde beendet. Bitte erneut versuchen.";
+        });
+      })().catch((error: Error) => { current.error = error.message; });
+    }
+    if (session.error) throw new HttpError(422, session.error);
+    return { url: session.url, pending: !session.url && !session.finished, sent: session.sent, finished: session.finished };
+  }
+  submitLoginCode(account: Account, code: string) {
+    const session = this.agyLogins.get(account.id);
+    if (account.provider !== "antigravity" || !session?.channel || !session.url || session.finished)
+      throw new HttpError(409, "Anmeldung ist abgelaufen. Bitte erneut starten.");
+    session.channel.write(code + "\r");
+    session.sent = true;
+  }
+  cancelLogin(id: string) {
+    const session = this.agyLogins.get(id);
+    if (!session) return;
+    clearTimeout(session.timer);
+    session.channel?.signal("TERM");
+    session.channel?.end();
+    this.agyLogins.delete(id);
   }
   async skills(account: Account, cwd: string) {
     if (account.provider !== "codex")

@@ -9,6 +9,7 @@ import { Remote } from "./ssh.ts";
 import { Store } from "./store.ts";
 import { Providers } from "./providers.ts";
 import { Desktops } from "./desktops.ts";
+import { GitHub, githubLoginCommand, githubRepository } from "./github.ts";
 import {
   absolutePath,
   authorized,
@@ -18,7 +19,7 @@ import {
   shellQuote as q,
   text,
 } from "./validation.ts";
-import type { Account, Attachment, Chat, Message } from "../src/types.ts";
+import type { Account, Attachment, Chat, Message, Project } from "../src/types.ts";
 
 interface Options {
   token: string;
@@ -38,6 +39,8 @@ export async function createBridge(options: Options) {
   await store.load();
   const remote = options.remote ?? new Remote();
   const desktops = new Desktops(remote);
+  const github = new GitHub(remote);
+  const projectWork = new Set<string>();
   const clients = new Set<WebSocket>();
   const emit = (event: string, payload: unknown) => {
     const bytes = JSON.stringify({ event, payload });
@@ -262,6 +265,21 @@ export async function createBridge(options: Options) {
     const login = await providers.login(account);
     res.json(login);
   });
+  app.post("/api/accounts/:id/login/code", (req, res) => {
+    const code = text(req.body.code, "Bestätigungscode", 4096).trim();
+    if (/\s/.test(code)) throw new HttpError(400, "Nur den Bestätigungscode eingeben");
+    providers.submitLoginCode(accountFor(req.params.id), code);
+    res.json({ ok: true });
+  });
+  app.delete("/api/accounts/:id/login", (req, res) => {
+    providers.cancelLogin(accountFor(req.params.id).id);
+    res.json({ ok: true });
+  });
+  app.post("/api/accounts/:id/prepare", (req, res) => {
+    remote.requireClient();
+    const result = providers.prepare(accountFor(req.params.id));
+    res.status(result.ready ? 200 : 202).json(result);
+  });
   app.get("/api/accounts/:id/skills", async (req, res) => {
     const cwd = absolutePath(req.query.cwd ?? remote.connection?.home);
     res.json(await providers.skills(accountFor(req.params.id), cwd));
@@ -292,7 +310,33 @@ export async function createBridge(options: Options) {
       ftp.end();
     }
   });
+  const cloning = new Map<string, { error?: Error }>();
   app.post("/api/projects", async (req, res) => {
+    remote.requireClient();
+    if (req.body.repository !== undefined) {
+      const { url } = githubRepository(req.body.repository);
+      const existing = store.state.projects.find((project) => project.repository === url);
+      if (existing) { res.json(existing); return; }
+      let job = cloning.get(url);
+      if (job?.error) {
+        cloning.delete(url);
+        throw new HttpError(422, `GitHub-Repo konnte nicht geladen werden. Für private Repos zuerst GitHub verbinden. ${job.error.message}`);
+      }
+      if (!job) {
+        if (store.state.projects.length + cloning.size >= 100)
+          throw new HttpError(400, "Maximal 100 Projekte");
+        job = {};
+        cloning.set(url, job);
+        const current = job;
+        void github.clone(url).then(async (project) => {
+          store.state.projects.push(project);
+          await save();
+          cloning.delete(url);
+        }).catch((error: Error) => { current.error = error; });
+      }
+      res.status(202).json({ pending: true });
+      return;
+    }
     if (store.state.projects.length >= 100)
       throw new HttpError(400, "Maximal 100 Projekte");
     const name = text(req.body.name, "Projektname", 100);
@@ -303,6 +347,28 @@ export async function createBridge(options: Options) {
     store.state.projects.push(project);
     await save();
     res.status(201).json(project);
+  });
+  const pushProject = async (project: Project) => {
+    project.syncing = true;
+    delete project.syncError;
+    await save();
+    try {
+      return await github.push(project);
+    } catch (error) {
+      project.syncError = (error as Error).message;
+      throw error;
+    } finally {
+      project.syncing = false;
+      await save();
+    }
+  };
+  app.post("/api/projects/:id/push", async (req, res) => {
+    const project = store.state.projects.find((value) => value.id === id(req.params.id));
+    if (!project?.repository) throw new HttpError(404, "GitHub-Projekt nicht gefunden");
+    if (projectWork.has(project.id)) throw new HttpError(409, "Projekt arbeitet bereits");
+    projectWork.add(project.id);
+    res.status(202).json({ pending: true });
+    void pushProject(project).catch(() => {}).finally(() => projectWork.delete(project.id));
   });
   app.post("/api/chats", async (req, res) => {
     if (store.state.chats.length >= 200)
@@ -449,10 +515,20 @@ export async function createBridge(options: Options) {
       status: "running",
       events: [],
     };
+    const project = store.state.projects.find((value) => value.id === chat.projectId);
+    const sync = project?.repository && permission !== "read-only";
+    if (project?.repository && projectWork.has(project.id))
+      throw new HttpError(409, "In diesem GitHub-Projekt läuft bereits ein Auftrag oder Upload");
+    if (project?.repository) projectWork.add(project.id);
     chat.messages.push(user, assistant);
     if (chat.messages.length === 2) chat.title = prompt.slice(0, 80);
     chat.updatedAt = user.createdAt;
-    await store.save();
+    try {
+      await store.save();
+    } catch (error) {
+      if (project) projectWork.delete(project.id);
+      throw error;
+    }
     let lastUpdate = 0;
     const update = () => {
       if (Date.now() - lastUpdate > 80 || assistant.status !== "running") {
@@ -461,8 +537,10 @@ export async function createBridge(options: Options) {
       }
     };
     res.status(202).json(chat);
-    void providers
-      .turn(
+    void (async () => {
+      if (sync) await github.prepare(project);
+      if (assistant.status === "cancelled") return;
+      await providers.turn(
         account,
         chat,
         assistant,
@@ -472,12 +550,27 @@ export async function createBridge(options: Options) {
         effort,
         update,
         browser,
-      )
+      );
+      if (sync && assistant.status === "complete") {
+        const event = { id: randomUUID(), title: "GitHub-Upload", detail: "Änderungen werden committed und hochgeladen …", status: "running" };
+        assistant.events!.push(event);
+        update();
+        try {
+          event.detail = await pushProject(project) || "GitHub ist aktuell.";
+          event.status = "complete";
+        } catch (error) {
+          event.detail = `Upload fehlgeschlagen; lokale Arbeit bleibt erhalten. ${(error as Error).message}`;
+          event.status = "failed";
+          assistant.error = event.detail;
+        }
+      }
+    })()
       .catch((error) => {
         assistant.status = "failed";
         assistant.error = error.message;
       })
       .finally(() => {
+        if (project) projectWork.delete(project.id);
         emit("chat", chat);
         void save().catch(() =>
           emit("error", {
@@ -487,8 +580,12 @@ export async function createBridge(options: Options) {
         );
       });
   });
-  app.post("/api/chats/:id/cancel", (req, res) => {
-    providers.cancel(chatFor(req.params.id).id);
+  app.post("/api/chats/:id/cancel", async (req, res) => {
+    const chat = chatFor(req.params.id);
+    providers.cancel(chat.id);
+    const message = chat.messages.at(-1);
+    if (message?.status === "running") message.status = "cancelled";
+    await save();
     res.json({ ok: true });
   });
   app.post("/api/approvals/:id", (req, res) => {
@@ -520,6 +617,7 @@ export async function createBridge(options: Options) {
       "desktop",
       "account",
       "install",
+      "github",
     ] as const);
     if (purpose !== "events") remote.requireClient();
     if (tickets.size >= 50)
@@ -609,7 +707,9 @@ export async function createBridge(options: Options) {
                 ? "agy"
                 : "opencode auth login",
           );
-        } else if (ticket.purpose === "install")
+        } else if (ticket.purpose === "github")
+          command = githubLoginCommand();
+        else if (ticket.purpose === "install")
           command = desktops.installCommand(
             choice(ticket.target, ["browser", "blender", "unity"] as const),
           );

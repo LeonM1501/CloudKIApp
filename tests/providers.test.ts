@@ -227,6 +227,83 @@ test("unauthenticated Codex does not gain fabricated models or account status", 
   assert.deepEqual(account.quotas, []);
   providers.close();
 });
+
+test("client preparation shares a running install across accounts and retries failures", async () => {
+  let runs = 0;
+  let complete!: (result: { stdout: string; stderr: string }) => void;
+  let fail!: (error: Error) => void;
+  const remote = {
+    run: (_command: string, timeout: number) => {
+      runs++;
+      assert.equal(timeout, 240000);
+      return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+        complete = resolve;
+        fail = reject;
+      });
+    },
+  } as unknown as Remote;
+  const providers = new Providers(remote, () => {});
+  const account = fixture();
+  assert.deepEqual(providers.prepare(account), { ready: false });
+  assert.deepEqual(providers.prepare({ ...account, id: "second-account" }), { ready: false });
+  assert.equal(runs, 1);
+  complete({ stdout: "codex 1.0", stderr: "" });
+  await Promise.resolve();
+  assert.deepEqual(providers.prepare(account), { ready: true });
+  assert.equal(runs, 1);
+  assert.deepEqual(providers.prepare(account), { ready: false });
+  fail(new Error("download unavailable"));
+  await Promise.resolve();
+  assert.throws(() => providers.prepare(account), /download unavailable/);
+  assert.deepEqual(providers.prepare(account), { ready: false });
+  assert.equal(runs, 3);
+  complete({ stdout: "codex 1.0", stderr: "" });
+  await Promise.resolve();
+  assert.deepEqual(providers.prepare(account), { ready: true });
+  providers.close();
+});
+
+test("Antigravity login survives UI polling and exposes a complete browser link", async () => {
+  class LoginWire extends Duplex {
+    stderr = new PassThrough();
+    input: string[] = [];
+    _read() {}
+    setWindow() {}
+    signal() {}
+    _write(bytes: Buffer, _encoding: string, done: () => void) {
+      this.input.push(bytes.toString()); done();
+    }
+  }
+  const wire = new LoginWire();
+  let opened = 0;
+  const remote = {
+    open: async () => { opened++; return wire; },
+    accountCommand: async (_id: string, command: string) => command,
+  } as unknown as Remote;
+  const providers = new Providers(remote, () => {});
+  const account = { ...fixture(), provider: "antigravity" as const };
+  try {
+    assert.equal((await providers.login(account)).pending, true);
+    await new Promise((done) => setImmediate(done));
+    wire.push("Select login method:\n > 1. Google OAuth\n2. Use a Google Cloud project\n");
+    await new Promise((done) => setImmediate(done));
+    assert.deepEqual(wire.input, ["\r"]);
+    const url = "https://accounts.google.com/o/oauth2/auth?state=fixture&code_challenge=fixture";
+    wire.push(`\x1b]8;;${url}\x07Click here\x1b]8;;\x07`);
+    await new Promise((done) => setImmediate(done));
+    assert.equal((await providers.login(account)).url, url);
+    assert.equal((await providers.login(account)).url, url);
+    assert.equal(opened, 1);
+    providers.submitLoginCode(account, "fixture-auth-code");
+    assert.equal(wire.input.at(-1), "fixture-auth-code\r");
+    assert.equal((await providers.login(account)).sent, true);
+    providers.cancelLogin(account.id);
+    assert.throws(() => providers.submitLoginCode(account, "expired"), /abgelaufen/);
+  } finally {
+    providers.close();
+    wire.destroy();
+  }
+});
 test("OpenCode ACP streams responses and rejects unsupported sandbox promises", async () => {
   const wires: ProviderWire[] = [];
   const remote = {

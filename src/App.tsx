@@ -37,12 +37,14 @@ import type {
   Attachment,
   Chat,
   Permission,
+  Project,
   State,
 } from "./types";
 import { PROVIDERS } from "./types";
 import { Modal } from "./components/Modal";
 import { Setup } from "./components/Setup";
 import { RemoteWorkspace } from "./components/RemoteWorkspace";
+import { Terminal } from "./components/Terminal";
 
 function preference<T>(key: string, fallback: T): T {
   try {
@@ -197,6 +199,8 @@ export default function App() {
   } | null>(null);
   const [directoryInput, setDirectoryInput] = useState("");
   const [projectName, setProjectName] = useState("");
+  const [projectBusy, setProjectBusy] = useState(false);
+  const [githubLogin, setGithubLogin] = useState(false);
   const [browserAttached, setBrowserAttached] = useState(false);
   const [plus, setPlus] = useState(false);
   const [skills, setSkills] = useState<
@@ -209,8 +213,8 @@ export default function App() {
   const fileInput = useRef<HTMLInputElement>(null);
   const messages = useRef<HTMLDivElement>(null);
   const nearEnd = useRef(true);
-  const refresh = useCallback(async () => {
-    if (api) setState(await api.request("/api/state"));
+  const refresh = useCallback(async (updated?: State) => {
+    if (api) setState(updated ?? (await api.request("/api/state")));
   }, [api]);
   const run = async (job: () => Promise<void>) => {
     setError("");
@@ -422,11 +426,33 @@ export default function App() {
   const browse = async (path: string) => {
     if (api)
       await run(async () => {
-        const value = await api.request(
-          `/api/directories?path=${encodeURIComponent(path)}`,
-        );
-        setDirectory(value);
-        setDirectoryInput(value.path);
+        setProjectBusy(true);
+        try {
+          if (/^https?:\/\//i.test(path.trim())) {
+            while (true) {
+              const result = await api.request<Project | { pending: true }>(
+                "/api/projects", "POST", { repository: path.trim() },
+              );
+              if ("pending" in result) {
+                await new Promise((done) => setTimeout(done, 1000));
+                continue;
+              }
+              await refresh();
+              setProjectId(result.id);
+              setSelectedChat(null);
+              setProjectOpen(false);
+              setDirectoryInput("");
+              return;
+            }
+          }
+          const value = await api.request(
+            `/api/directories?path=${encodeURIComponent(path)}`,
+          );
+          setDirectory(value);
+          setDirectoryInput(value.path);
+        } finally {
+          setProjectBusy(false);
+        }
       });
   };
   const upload = async (files: FileList | null) => {
@@ -1268,8 +1294,8 @@ export default function App() {
               Ohne Projekt starten
             </button>
             {state.projects.map((value) => (
+              <div key={value.id}>
               <button
-                key={value.id}
                 onClick={() => {
                   setProjectId(value.id);
                   setSelectedChat(null);
@@ -1279,13 +1305,30 @@ export default function App() {
                 <Folder size={17} />
                 <span>
                   {value.name}
-                  <small>{value.path}</small>
+                  <small>{value.repository ?? value.path}</small>
                 </span>
               </button>
+              {value.repository && (
+                <>
+                  <p className={value.syncError ? "error small" : "subtle small"} role="status">
+                    {value.syncing ? "GitHub-Upload läuft …" : value.syncError ?? `Automatischer Upload auf ${value.branch}`}
+                  </p>
+                  <button disabled={!connected || value.syncing} onClick={() => void run(async () => {
+                    await api.request(`/api/projects/${value.id}/push`, "POST");
+                    await refresh();
+                  })}>Änderungen hochladen</button>
+                </>
+              )}
+              </div>
             ))}
           </div>
           <hr />
-          <h3>Ordner vom Server hinzufügen</h3>
+          <h3>Server-Ordner oder GitHub-Repo hinzufügen</h3>
+          {error && <p className="error" role="alert">{error}</p>}
+          <p className="subtle small">
+            GitHub-Repo-Link eingeben. Änderungen werden nach erfolgreichen Aufträgen automatisch committed und hochgeladen; .gitignore gilt weiterhin.
+          </p>
+          <button disabled={!connected} onClick={() => setGithubLogin(true)}>GitHub verbinden</button>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -1294,12 +1337,13 @@ export default function App() {
           >
             <div className="field-row">
               <input
-                aria-label="Server-Ordner"
+                aria-label="Server-Ordner oder GitHub-Repo"
                 value={directoryInput}
                 onChange={(event) => setDirectoryInput(event.target.value)}
-                placeholder="/home/cloudki/projects"
+                disabled={projectBusy}
+                placeholder="https://github.com/NAME/REPO oder /home/cloudki/projects"
               />
-              <button disabled={!connected}>Durchsuchen</button>
+              <button disabled={!connected || projectBusy}>{projectBusy ? "Wird geladen …" : /^https?:\/\//i.test(directoryInput.trim()) ? "Repo hinzufügen" : "Durchsuchen"}</button>
             </div>
           </form>
           {directory && (
@@ -1356,6 +1400,15 @@ export default function App() {
               </button>
             </>
           )}
+        </Modal>
+      )}
+      {githubLogin && (
+        <Modal title="GitHub verbinden" wide onClose={() => setGithubLogin(false)}>
+          <p className="subtle small">
+            Melde den Home-Server einmal bei GitHub an. Öffne die angezeigte Adresse auf deinem iPad und bestätige den Gerätecode. Danach kannst du deine Repos per Link auswählen und Änderungen hochladen.
+          </p>
+          <a className="button primary" href="https://github.com/login/device" target="_blank" rel="noopener noreferrer">GitHub-Geräteanmeldung öffnen</a>
+          <Terminal api={api} purpose="github" />
         </Modal>
       )}
       {skills && (

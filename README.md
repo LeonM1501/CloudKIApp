@@ -26,7 +26,11 @@ Die Bridge bindet ausschließlich an `127.0.0.1:3001`. Lokal ist die gebaute App
 
 Für den Zugriff vom iPad benötigt die Bridge einen HTTPS-Reverse-Proxy oder einen passenden privaten Zugang mit vertrauenswürdigem HTTPS-Zertifikat. In der App dessen Adresse und den Bridge-Schlüssel eingeben. Die iPad-App kann den Node-Server nicht selbst ausführen oder installieren.
 
+Beim Klick auf „Anmelden“ prüft die Bridge den jeweiligen KI-Client auf dem SSH-Server und installiert ihn bei Bedarf für diesen Linux-Benutzer. Codex und OpenCode kommen aus den offiziellen npm-Paketen, Antigravity über den offiziellen Installer. Weitere Accounts verwenden dieselbe Installation mit getrennten Profilen. Node.js/npm und für Antigravity curl müssen vorhanden sein; sudo ist nicht erforderlich.
+
 Eine ausführliche Einrichtung einschließlich Server, Apps und IPA-Build steht in [docs/SETUP.md](docs/SETUP.md).
+
+Im Projektdialog kannst du statt eines Server-Pfads einen Link wie `https://github.com/NAME/REPO` eingeben. Die Bridge klont das Repo auf den SSH-Server. Für private Repos und Uploads einmal „GitHub verbinden“ wählen und den Geräte-Login im Terminal abschließen. Nach erfolgreichen Aufträgen außerhalb des Nur-Lesen-Modus werden Änderungen unter Beachtung von `.gitignore` committed und auf den ursprünglichen Branch gepusht. Upload-Fehler sind im Chat und Projektdialog sichtbar; „Änderungen hochladen“ wiederholt den Upload. Bei Konflikten bleiben Dateien und Commits lokal erhalten; es gibt keinen Force-Push. Parallele Aufträge im selben GitHub-Projekt werden abgelehnt.
 
 ## Funktionsumfang und Grenzen
 

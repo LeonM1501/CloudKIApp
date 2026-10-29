@@ -187,6 +187,7 @@ test("real SSH handshake refuses unverified and changed host keys before authent
     );
     assert.match(command, /GEMINI_HOME=/);
     assert.match(command, /XDG_DATA_HOME=/);
+    assert.match(command, /export PATH=.*\.local\/bin/);
     await assert.rejects(
       remote.connect({ ...input, fingerprint: "SHA256:wrong" }),
       (error: any) => error.status === 409 && error.details.changed,
@@ -195,9 +196,42 @@ test("real SSH handshake refuses unverified and changed host keys before authent
     assert.equal(remote.connection?.connected, true);
     await assert.rejects(
       remote.connect({ ...input, fingerprint, password: "wrong" }),
-      /SSH-Verbindung fehlgeschlagen/,
+      (error: any) => {
+        assert.equal(error.status, 422);
+        assert.match(error.message, /SSH-Anmeldung abgelehnt/);
+        assert.match(error.message, /SSH-Schlüssel/);
+        return true;
+      },
     );
     assert.equal(remote.connection?.host, "127.0.0.1");
+    const directory = await mkdtemp(join(tmpdir(), "cloudki-ssh-api-"));
+    const bridge = await createBridge({ token, dataDir: directory, remote });
+    await new Promise<void>((done) => bridge.server.listen(0, "127.0.0.1", done));
+    const base = `http://127.0.0.1:${(bridge.server.address() as { port: number }).port}`;
+    const connect = (password: string) =>
+      fetch(base + "/api/server/connect", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Origin: "capacitor://localhost",
+        },
+        body: JSON.stringify({ ...input, fingerprint, password }),
+      });
+    try {
+      const refused = await connect("wrong");
+      assert.equal(refused.status, 422);
+      assert.equal(refused.headers.get("access-control-allow-origin"), "capacitor://localhost");
+      assert.match((await refused.json()).error, /SSH-Schlüssel/);
+      const accepted = await connect("test-password");
+      assert.equal(accepted.status, 200);
+      const state = await accepted.json();
+      assert.equal(state.connection.connected, true);
+      assert.match(state.connection.hardware, /RAM: 8.0 GiB/);
+    } finally {
+      await bridge.close();
+      await rm(directory, { recursive: true, force: true });
+    }
   } finally {
     remote.disconnect();
     for (const client of connections) client.end();
