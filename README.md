@@ -51,7 +51,9 @@ Im Projektdialog kannst du statt eines Server-Pfads einen Link wie `https://gith
 
 ## Hardware
 
-Für KI-Clients, Coding und einfache Browser-Aufgaben ist keine eigene Inferenz-GPU nötig: Die Modelle laufen beim Anbieter. Für interaktive Unity-/Blender-Arbeit ist eine geeignete GPU sinnvoll. Der aktuelle Xvfb-Stream verwendet zunächst Software-Rendering; GPU-Passthrough/VirtualGL ist **nicht** implementiert. Ein normales VPS-Setup ist damit keine Zusage für flüssige 3D-Editoren.
+Für KI-Clients, Coding und einfache Browser-Aufgaben ist keine eigene Inferenz-GPU nötig: Die Modelle laufen beim Anbieter. Für interaktive Unity-/Blender-Arbeit ist eine geeignete GPU sinnvoll. Die Xvfb-Sitzung nutzt VirtualGL/EGL, wenn VirtualGL installiert ist; der tatsächlich geprüfte OpenGL-Renderer wird in der Remote-Ansicht angezeigt. Ohne VirtualGL bleibt es bei Software-Rendering. Das ist keine Zusage für die Leistung beliebiger 3D-Editoren oder Vulkan-Anwendungen.
+
+Weitere installierte Linux-GUI-Apps mit einem sichtbaren `.desktop`-Eintrag erscheinen automatisch neben Browser, Unity und Blender. Du kannst die KI auffordern, ein Programm aus seiner offiziellen Quelle zu installieren und für CloudKI Bridge zu registrieren. Der Remote-Workspace aktualisiert die App-Liste alle fünf Sekunden. Die Programme laufen jeweils in einer eigenen Sitzung und lassen sich über denselben VNC-Stream mit Touch, Maus und Tastatur bedienen.
 
 Offizielle Anforderungen: [Unity](https://docs.unity3d.com/6000.0/Documentation/Manual/system-requirements.html), [Blender](https://www.blender.org/download/requirements/).
 

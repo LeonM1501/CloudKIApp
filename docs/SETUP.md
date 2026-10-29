@@ -67,6 +67,10 @@ Anhänge werden per SFTP mit zufälligem Pfad übertragen. Im Chat werden diese 
 
 Der Workspace startet eine eigene Xvfb-Display-Sitzung mit Openbox, App und x11vnc. Es wird kein vorhandener Server-Desktop aufgenommen. VNC läuft auf Loopback und wird über die bestehende SSH-Verbindung zur authentifizierten App getunnelt. Die Loopback-Dienste setzen einen vertrauenswürdigen, nur diesem Besitzer gehörenden Host voraus.
 
+Weitere GUI-Programme werden aus den normalen Linux-Desktop-Einträgen unter `~/.local/share/applications`, `/usr/local/share/applications` und `/usr/share/applications` erkannt. Ein Eintrag benötigt `Type=Application`, `Name`, `Exec` und `Terminal=false`; versteckte Einträge werden nicht angezeigt. Der offizielle Programm-Installer legt diese Einträge häufig selbst an. Die KI erhält für entsprechende Installationsaufträge die Anweisung, den Eintrag andernfalls anzulegen. Zum Starten werden außerdem `python3`, `gtk-launch`, `xprop`, `dbus-run-session` und `setsid` benötigt. „Streaming einrichten“ installiert die Laufzeit über apt; das eigentliche zusätzliche Programm installiert die KI entsprechend deinem Auftrag.
+
+Mit installiertem VirtualGL prüft jeder Start den EGL-OpenGL-Renderer und startet die App über VirtualGL. Unterstützt werden `vglrun` im PATH sowie eine benutzerspezifische Installation unter `~/.local/share/cloudki/virtualgl/` (entpacktes offizielles Debian-Paket). `glxinfo` muss verfügbar sein. Die Remote-Leiste zeigt den tatsächlich geprüften Renderer. Auf dem eingerichteten Home-Server wurden VirtualGL 3.1.5, die GTX 1050 Ti und eine echte zusätzliche App-Sitzung erfolgreich geprüft. Das ersetzt keinen Leistungstest jeder einzelnen App.
+
 „Installieren“ zeigt zuerst den exakten apt-Befehl; nach Start läuft die echte Ausgabe im Terminal. Ein benötigtes sudo-Passwort dort eingeben. Der Status kommt vom Prozess, nicht von einem Timer.
 
 - Debian: `chromium`, `blender`, `xvfb`, `x11vnc`, `openbox` kommen aus den eingerichteten Paketquellen.

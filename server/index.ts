@@ -595,13 +595,13 @@ export async function createBridge(options: Options) {
   app.get("/api/apps", async (_req, res) => res.json(await desktops.status()));
   app.post("/api/apps/:id/start", async (req, res) => {
     await desktops.start(
-      choice(req.params.id, ["browser", "blender", "unity"] as const),
+      desktops.appId(req.params.id),
     );
     res.json(await desktops.status());
   });
   app.post("/api/apps/:id/stop", async (req, res) => {
     desktops.stop(
-      choice(req.params.id, ["browser", "blender", "unity"] as const),
+      desktops.appId(req.params.id),
     );
     res.json(await desktops.status());
   });
@@ -628,8 +628,7 @@ export async function createBridge(options: Options) {
       if (providers.isBusy(account.id))
         throw new HttpError(409, "Account arbeitet gerade");
     }
-    if (purpose === "desktop" || purpose === "install")
-      choice(target, ["browser", "blender", "unity"] as const);
+    if (purpose === "desktop" || purpose === "install") desktops.appId(target);
     const ticket = randomBytes(24).toString("hex");
     tickets.set(ticket, { purpose, target, until: Date.now() + 30000 });
     res.json({ ticket });
@@ -668,11 +667,7 @@ export async function createBridge(options: Options) {
           return;
         }
         if (ticket.purpose === "desktop") {
-          const appId = choice(ticket.target, [
-            "browser",
-            "blender",
-            "unity",
-          ] as const);
+          const appId = desktops.appId(ticket.target);
           const channel = await new Promise<ClientChannel>((done, fail) =>
             remote
               .requireClient()
@@ -711,7 +706,7 @@ export async function createBridge(options: Options) {
           command = githubLoginCommand();
         else if (ticket.purpose === "install")
           command = desktops.installCommand(
-            choice(ticket.target, ["browser", "blender", "unity"] as const),
+            desktops.appId(ticket.target),
           );
         const channel = await remote.open(command, true);
         if (ws.readyState !== WebSocket.OPEN) {

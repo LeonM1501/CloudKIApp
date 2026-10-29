@@ -9,7 +9,7 @@ import {
   Download,
 } from "lucide-react";
 import type RFB from "@novnc/novnc";
-import type { AppId } from "../types";
+import type { AppId, DesktopApp } from "../types";
 import type { BridgeApi } from "../api";
 import { Terminal } from "./Terminal";
 import { Modal } from "./Modal";
@@ -69,9 +69,11 @@ export function RemoteWorkspace({
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<AppId | "terminal">("browser");
-  const [apps, setApps] = useState<{ available: string[]; running: string[] }>({
+  const [apps, setApps] = useState<{ available: string[]; running: string[]; apps: DesktopApp[]; renderers: Record<string, string> }>({
     available: [],
     running: [],
+    apps: [{ id: "browser", name: "Browser" }, { id: "unity", name: "Unity" }, { id: "blender", name: "Blender" }],
+    renderers: {},
   });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -86,8 +88,11 @@ export function RemoteWorkspace({
     }
   };
   useEffect(() => {
-    if (connected) void refresh();
-  }, [connected]);
+    if (!connected) return;
+    void refresh();
+    const timer = setInterval(refresh, 5000);
+    return () => clearInterval(timer);
+  }, [api, connected]);
   const start = async () => {
     setBusy(true);
     try {
@@ -103,8 +108,8 @@ export function RemoteWorkspace({
     <section className="remote-workspace" aria-label="Remote-Workspace">
       <header className="pane-header">
         <div className="tabs">
-          {(["browser", "unity", "blender", "terminal"] as const).map(
-            (value) => (
+          {[...apps.apps, { id: "terminal" as const, name: "Terminal" }].map(
+            ({ id: value, name }) => (
               <button
                 key={value}
                 className={tab === value ? "selected" : ""}
@@ -118,13 +123,7 @@ export function RemoteWorkspace({
                   <Box size={16} />
                 )}
                 <span>
-                  {value === "browser"
-                    ? "Browser"
-                    : value === "terminal"
-                      ? "Terminal"
-                      : value === "unity"
-                        ? "Unity"
-                        : "Blender"}
+                  {name}
                 </span>
               </button>
             ),
@@ -151,7 +150,7 @@ export function RemoteWorkspace({
           <div className="remote-toolbar">
             <span className="subtle small">
               {apps.running.includes(tab)
-                ? "Live auf deinem Server"
+                ? `Live · ${apps.renderers[tab] ?? "auf deinem Server"}`
                 : "Eigene App-Sitzung auf Linux"}
             </span>
             <button
@@ -192,7 +191,7 @@ export function RemoteWorkspace({
                   ? "Dein Linux-Browser"
                   : tab === "unity"
                     ? "Unity Hub & Editor"
-                    : "Blender auf deinem Server"}
+                    : apps.apps.find(app => app.id === tab)?.name ?? "Linux-App"}
               </h3>
               <p>
                 {tab === "browser"
@@ -211,11 +210,13 @@ export function RemoteWorkspace({
                   }}
                 >
                   <Download size={16} />
-                  Installieren
+                  {tab.startsWith("desktop-") ? "Streaming einrichten" : "Installieren"}
                 </button>
               </div>
               <p className="subtle small">
-                {tab === "unity"
+                {tab.startsWith("desktop-")
+                  ? "Weitere Programme kannst du von der KI installieren lassen. Installierte Linux-Apps erscheinen hier automatisch."
+                  : tab === "unity"
                   ? "Unity Hub benötigt das offizielle Unity-Paketrepository. Editor-Version und Lizenz wählst du im Hub."
                   : "Installation über apt auf Debian/Ubuntu. Ein normaler Linux-Benutzer und sudo sind nötig."}
               </p>
@@ -225,7 +226,7 @@ export function RemoteWorkspace({
       )}
       {install && (
         <Modal
-          title={`${install === "unity" ? "Unity Hub" : install === "blender" ? "Blender" : "Chromium"} installieren`}
+          title={install.startsWith("desktop-") ? "App-Streaming einrichten" : `${install === "unity" ? "Unity Hub" : install === "blender" ? "Blender" : "Chromium"} installieren`}
           wide
           onClose={() => {
             setInstall(null);
@@ -243,12 +244,12 @@ export function RemoteWorkspace({
               </p>
               <pre>
                 sudo apt-get update{"\n"}sudo apt-get install -y xvfb x11vnc
-                openbox{" "}
+                openbox x11-utils libgtk-3-bin dbus-x11 python3 mesa-utils{" "}
                 {install === "unity"
                   ? "unityhub"
                   : install === "blender"
                     ? "blender"
-                    : "chromium"}
+                    : install === "browser" ? "chromium" : ""}
               </pre>
               {install === "unity" && (
                 <p>

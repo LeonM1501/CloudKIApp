@@ -1,6 +1,7 @@
 export type Provider = "codex" | "opencode" | "antigravity";
 export type Permission = "ask" | "workspace" | "read-only" | "full";
-export type AppId = "browser" | "blender" | "unity";
+export type AppId = "browser" | "blender" | "unity" | `desktop-${string}`;
+export interface DesktopApp { id: AppId; name: string; desktopId?: string }
 export interface Model {
   id: string;
   name: string;
