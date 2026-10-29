@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Duplex, PassThrough } from "node:stream";
-import { Providers } from "../server/providers.ts";
+import { Providers, agyModels } from "../server/providers.ts";
 import type { Remote } from "../server/ssh.ts";
 import type { Account, Chat, Message } from "../src/types.ts";
 
@@ -276,9 +276,16 @@ test("Antigravity login survives UI polling and exposes a complete browser link"
   }
   const wire = new LoginWire();
   let opened = 0;
+  let authenticated = false;
   const remote = {
     open: async () => { opened++; return wire; },
-    accountCommand: async (_id: string, command: string) => command,
+    accountCommand: async (_id: string, command: string, provider: string) => {
+      assert.equal(provider, "antigravity"); return command;
+    },
+    run: async () => {
+      if (!authenticated) throw new Error("Please sign in to view available models");
+      return { stdout: "fixture-model\tFixture Model\n", stderr: "" };
+    },
   } as unknown as Remote;
   const providers = new Providers(remote, () => {});
   const account = { ...fixture(), provider: "antigravity" as const };
@@ -292,6 +299,7 @@ test("Antigravity login survives UI polling and exposes a complete browser link"
     wire.push(`\x1b]8;;${url}\x07Click here\x1b]8;;\x07`);
     await new Promise((done) => setImmediate(done));
     assert.equal((await providers.login(account)).url, url);
+    (providers as any).agyLogins.get(account.id).startedAt = Date.now() - 31000;
     assert.equal((await providers.login(account)).url, url);
     assert.equal(opened, 1);
     providers.submitLoginCode(account, "fixture-auth-code");
@@ -300,12 +308,71 @@ test("Antigravity login survives UI polling and exposes a complete browser link"
     providers.cancelLogin(account.id, false);
     assert.equal((await providers.login(account)).sent, true);
     assert.equal(opened, 1);
+    authenticated = true;
+    await new Promise((done) => setImmediate(done));
+    await providers.login(account);
+    await new Promise((done) => setImmediate(done));
+    assert.equal((await providers.login(account)).authenticated, true);
+    assert.equal(account.status, "authenticated");
+    assert.equal(account.models[0].id, "fixture-model");
     providers.cancelLogin(account.id);
     assert.throws(() => providers.submitLoginCode(account, "expired"), /abgelaufen/);
   } finally {
     providers.close();
     wire.destroy();
   }
+});
+
+test("Antigravity reads native tab-delimited model catalogs and ignores status text", () => {
+  assert.deepEqual(agyModels("Fetching available models...\n\u001b[32mgemini-4-argon-medium\tGemini 4 Argon (Medium)\u001b[0m\nclaude-opus  Claude Opus\n"), [
+    { id: "gemini-4-argon-medium", name: "Gemini 4 Argon (Medium)" },
+    { id: "claude-opus", name: "Claude Opus" },
+  ]);
+  assert.deepEqual(agyModels("Error: Please sign in to view available models"), []);
+});
+
+test("Antigravity recognizes an existing login without waiting for another OAuth link", async () => {
+  const providers = new Providers({
+    accountCommand: async (_id: string, command: string) => command,
+    run: async () => ({ stdout: "fixture-model\tFixture Model\n", stderr: "" }),
+    open: async () => { assert.fail("Already authenticated accounts need no login terminal"); },
+  } as unknown as Remote, () => {});
+  const account = { ...fixture(), provider: "antigravity" as const };
+  try {
+    await providers.login(account);
+    await new Promise((done) => setImmediate(done));
+    assert.equal((await providers.login(account)).authenticated, true);
+  } finally { providers.close(); }
+});
+
+test("Antigravity preparation and confirmation stop with a retryable error", async () => {
+  class Wire extends Duplex {
+    stderr = new PassThrough();
+    _read() {} setWindow() {} signal() {}
+    _write(_bytes: Buffer, _encoding: string, done: () => void) { done(); }
+  }
+  const wires: Wire[] = [];
+  const providers = new Providers({
+    accountCommand: async (_id: string, command: string) => command,
+    run: async () => { throw new Error("Please sign in"); },
+    open: async () => { const wire = new Wire(); wires.push(wire); return wire; },
+  } as unknown as Remote, () => {});
+  const account = { ...fixture(), provider: "antigravity" as const };
+  try {
+    await providers.login(account);
+    await new Promise((done) => setImmediate(done));
+    (providers as any).agyLogins.get(account.id).startedAt = Date.now() - 31000;
+    await assert.rejects(providers.login(account), /Neu versuchen/);
+    providers.cancelLogin(account.id);
+    await providers.login(account);
+    await new Promise((done) => setImmediate(done));
+    wires[1].push("https://accounts.google.com/o/oauth2/auth?state=new-login\n");
+    await new Promise((done) => setImmediate(done));
+    providers.submitLoginCode(account, "fixture-code");
+    (providers as any).agyLogins.get(account.id).sentAt = Date.now() - 46000;
+    await assert.rejects(providers.login(account), /neuen Link und Code/);
+    assert.equal(wires.length, 2);
+  } finally { providers.close(); for (const wire of wires) wire.destroy(); }
 });
 test("OpenCode ACP streams responses and rejects unsupported sandbox promises", async () => {
   const wires: ProviderWire[] = [];
@@ -392,7 +459,7 @@ test("Antigravity NDJSON uses real result status and never bypasses the explicit
       open: async () => new AgyWire(),
       run: async (command: string) => ({
         stdout: command.includes("agy models")
-          ? "fixture-model  Fixture Model\n"
+          ? "fixture-model\tFixture Model\n"
           : "",
         stderr: "",
       }),
@@ -402,7 +469,7 @@ test("Antigravity NDJSON uses real result status and never bypasses the explicit
     const providers = new Providers(remote, () => {});
     const account = { ...fixture(), provider: "antigravity" } as Account;
     await providers.refresh(account);
-    assert.equal(account.status, "ready");
+    assert.equal(account.status, "authenticated");
     assert.deepEqual(account.quotas, []);
     const { chat, output } = conversation();
     await assert.rejects(

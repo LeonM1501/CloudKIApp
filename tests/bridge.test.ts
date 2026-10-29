@@ -188,6 +188,12 @@ test("real SSH handshake refuses unverified and changed host keys before authent
     assert.match(command, /GEMINI_HOME=/);
     assert.match(command, /XDG_DATA_HOME=/);
     assert.match(command, /export PATH=.*\.local\/bin/);
+    assert.doesNotMatch(command, / HOME=/);
+    for (const id of ["account-1", "account-2"]) {
+      const agy = await remote.accountCommand(id, "agy models", "antigravity");
+      assert.ok(agy.includes(` HOME='/home/tester/.cloudki/accounts/${id}/home'`));
+      assert.ok(agy.includes("CLOUDKI_USER_HOME='/home/tester'"));
+    }
     await assert.rejects(
       remote.connect({ ...input, fingerprint: "SHA256:wrong" }),
       (error: any) => error.status === 409 && error.details.changed,

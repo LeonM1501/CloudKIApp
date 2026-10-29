@@ -11,13 +11,22 @@ export function AntigravityLogin({ api, accountId, onClose, refresh }: {
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let disposed = false;
+    let restart = attempt > 0;
     let timer: ReturnType<typeof setTimeout>;
+    setUrl(null); setSent(false); setError("");
     const poll = async () => {
       try {
-        const result = await api.request<{ url?: string; sent: boolean }>(`/api/accounts/${accountId}/login`, "POST");
+        const result = await api.request<{ url?: string; sent: boolean; authenticated: boolean }>(`/api/accounts/${accountId}/login`, "POST", restart ? { restart: true } : undefined);
+        restart = false;
         if (disposed) return;
+        if (result.authenticated) {
+          await refresh();
+          if (!disposed) onClose();
+          return;
+        }
         if (result.url) setUrl(result.url);
         setSent(result.sent);
         timer = setTimeout(poll, 2000);
@@ -31,14 +40,15 @@ export function AntigravityLogin({ api, accountId, onClose, refresh }: {
       clearTimeout(timer);
       void api.request(`/api/accounts/${accountId}/login`, "DELETE").catch(() => {});
     };
-  }, [api, accountId]);
+  }, [api, accountId, attempt]);
   return (
     <Modal title="Bei Antigravity anmelden" onClose={onClose}>
       <p role="status">
-        {sent ? "Code gesendet. Nach Abschluss kannst du den Account prüfen." : url ? "Melde dich bei Google an und kopiere anschließend den angezeigten Bestätigungscode." : "Google-Anmeldung wird vorbereitet …"}
+        {sent ? "Google-Anmeldung wird bestätigt … Das Fenster schließt sich nach erfolgreicher Prüfung automatisch." : url ? "Melde dich bei Google an und kopiere anschließend den angezeigten Bestätigungscode." : "Google-Anmeldung wird vorbereitet …"}
       </p>
       {error && <p className="error" role="alert">{error}</p>}
-      {url && <>
+      {error && <button className="primary full-width" onClick={() => setAttempt(value => value + 1)}>Neu versuchen</button>}
+      {url && !sent && !error && <>
         <a className="button primary full-width" href={url} target="_blank" rel="noopener noreferrer">
           1. Google-Anmeldung öffnen <ExternalLink size={16} />
         </a>
@@ -60,10 +70,6 @@ export function AntigravityLogin({ api, accountId, onClose, refresh }: {
           <button className="primary full-width" disabled={busy}>{busy ? "Code wird geprüft …" : "Code bestätigen"}</button>
         </form>
       </>}
-      {sent && <button className="full-width" disabled={busy} onClick={() => {
-        setBusy(true);
-        void refresh().then(onClose).catch((failure: Error) => { setError(failure.message); setBusy(false); });
-      }}>Account prüfen und schließen</button>}
     </Modal>
   );
 }

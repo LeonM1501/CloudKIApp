@@ -1,6 +1,6 @@
 import ssh2, { type Client, type ClientChannel, type SFTPWrapper } from "ssh2";
 import { createHash } from "node:crypto";
-import type { Connection } from "../src/types.ts";
+import type { Connection, Provider } from "../src/types.ts";
 import { absolutePath, HttpError, shellQuote, text } from "./validation.ts";
 import { clientPath } from "./clients.ts";
 
@@ -233,13 +233,13 @@ export class Remote {
       throw new HttpError(400, "Ungültiges Account-Verzeichnis");
     return `${this.connection.home}/.cloudki/accounts/${accountId}`;
   }
-  async accountCommand(accountId: string, command: string) {
+  async accountCommand(accountId: string, command: string, provider?: Provider) {
     const directory = this.accountDirectory(accountId);
     await this.run(
-      `umask 077; mkdir -p -- ${["codex", "gemini", "config", "data", "state"].map((name) => shellQuote(`${directory}/${name}`)).join(" ")}`,
+      `umask 077; mkdir -p -- ${["codex", "gemini", "config", "data", "state", "home"].map((name) => shellQuote(`${directory}/${name}`)).join(" ")}`,
     );
     const q = shellQuote;
     // Separate profiles are not an OS sandbox. Deploy one Unix user per owner.
-    return `export PATH=${clientPath}; env -u OPENAI_API_KEY -u CODEX_API_KEY -u GEMINI_API_KEY -u GOOGLE_API_KEY -u ANTHROPIC_API_KEY -u GOOGLE_APPLICATION_CREDENTIALS -u OPENCODE_AUTH_JSON CODEX_HOME=${q(directory + "/codex")} GEMINI_HOME=${q(directory + "/gemini")} ANTIGRAVITY_CONFIG_REL_DIR=${q(`.cloudki/accounts/${accountId}/gemini`)} ANTIGRAVITY_CREDENTIAL_SCOPE=${q(`cloudki-${accountId}`)} XDG_CONFIG_HOME=${q(directory + "/config")} XDG_DATA_HOME=${q(directory + "/data")} XDG_STATE_HOME=${q(directory + "/state")} ${command}`;
+    return `export PATH=${clientPath}; env -u OPENAI_API_KEY -u CODEX_API_KEY -u GEMINI_API_KEY -u GOOGLE_API_KEY -u ANTHROPIC_API_KEY -u GOOGLE_APPLICATION_CREDENTIALS -u OPENCODE_AUTH_JSON ${provider === "antigravity" ? `HOME=${q(directory + "/home")} ` : ""}CLOUDKI_USER_HOME=${q(this.connection!.home!)} CODEX_HOME=${q(directory + "/codex")} GEMINI_HOME=${q(directory + "/gemini")} XDG_CONFIG_HOME=${q(directory + "/config")} XDG_DATA_HOME=${q(directory + "/data")} XDG_STATE_HOME=${q(directory + "/state")} ${command}`;
   }
 }

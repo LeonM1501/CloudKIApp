@@ -236,6 +236,7 @@ export async function createBridge(options: Options) {
     if (providers.isBusy(account.id))
       throw new HttpError(409, "Account arbeitet gerade");
     providers.invalidate(account.id);
+    providers.cancelLogin(account.id);
     store.state.accounts = store.state.accounts.filter(
       (value) => value !== account,
     );
@@ -262,7 +263,9 @@ export async function createBridge(options: Options) {
   });
   app.post("/api/accounts/:id/login", async (req, res) => {
     const account = accountFor(req.params.id);
+    if (req.body?.restart === true) providers.cancelLogin(account.id);
     const login = await providers.login(account);
+    if ("authenticated" in login && login.authenticated) await save();
     res.json(login);
   });
   app.post("/api/accounts/:id/login/code", (req, res) => {
@@ -701,6 +704,7 @@ export async function createBridge(options: Options) {
               : account.provider === "antigravity"
                 ? "agy"
                 : "opencode auth login",
+            account.provider,
           );
         } else if (ticket.purpose === "github")
           command = githubLoginCommand();
