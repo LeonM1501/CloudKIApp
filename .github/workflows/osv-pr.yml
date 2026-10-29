@@ -14,7 +14,7 @@ permissions:
 jobs:
   scan-pr:
     # google/osv-scanner-action v2.6.0; verify before intentionally updating.
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36
     with:
       fail-on-vuln: true
       scan-args: |-
