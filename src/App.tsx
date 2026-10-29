@@ -400,6 +400,12 @@ export default function App() {
       setEffort("");
     }
   }, [state?.accounts]);
+  useEffect(() => {
+    const acc = state?.accounts.find((a) => a.id === accountId);
+    if (acc?.provider === "antigravity" && permission !== "full") {
+      setPermission("full");
+    }
+  }, [accountId, state?.accounts, permission]);
   const selectChat = (value: Chat) => {
     setSelectedChat(value.id);
     setProjectId(value.projectId);
@@ -1183,19 +1189,25 @@ export default function App() {
                   <select
                     className="permission-select"
                     aria-label="Berechtigungen"
-                    value={permission}
+                    value={account?.provider === "antigravity" ? "full" : permission}
                     onChange={(event) =>
                       event.target.value === "full"
                         ? setFullAccessPrompt(true)
                         : setPermission(event.target.value as Permission)
                     }
                   >
-                    <option value="ask">Nachfragen</option>
-                    <option value="workspace">
-                      Im Projekt arbeiten · Codex
-                    </option>
-                    <option value="read-only">Nur lesen · Codex</option>
-                    <option value="full">Vollzugriff</option>
+                    {account?.provider === "antigravity" ? (
+                      <option value="full">Vollzugriff · Antigravity</option>
+                    ) : (
+                      <>
+                        <option value="ask">Nachfragen</option>
+                        <option value="workspace">
+                          Im Projekt arbeiten · Codex
+                        </option>
+                        <option value="read-only">Nur lesen · Codex</option>
+                        <option value="full">Vollzugriff</option>
+                      </>
+                    )}
                   </select>
                 </div>
                 <div className="row model-controls">
@@ -1342,6 +1354,7 @@ export default function App() {
                       setAccountId(item.id);
                       setModelId(value.id);
                       setEffort("");
+                      if (item.provider === "antigravity") setPermission("full");
                       setModelsOpen(false);
                     }}
                   >

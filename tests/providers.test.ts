@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Duplex, PassThrough } from "node:stream";
-import { Providers, agyModels } from "../server/providers.ts";
+import { Providers, agyModels, agyQuotas } from "../server/providers.ts";
 import type { Remote } from "../server/ssh.ts";
 import type { Account, Chat, Message } from "../src/types.ts";
 
@@ -329,6 +329,31 @@ test("Antigravity reads native tab-delimited model catalogs and ignores status t
     { id: "claude-opus", name: "Claude Opus" },
   ]);
   assert.deepEqual(agyModels("Error: Please sign in to view available models"), []);
+});
+
+test("Antigravity parses usage outputs into Quota objects", () => {
+  const sample = `Gemini Models\tWeekly Limit Remaining\t96%\t2026-11-03T22:33:23Z
+Gemini Models\tFive Hour Limit Remaining\t89%\t2026-10-29T23:14:35Z
+Claude and GPT models\tWeekly Limit Remaining\t97%\t2026-11-02T23:44:06Z
+Gemini 4 Argon\tGemini 4 Argon Weekly Limit\t0%\t2026-11-03T15:43:53Z`;
+  const quotas = agyQuotas(sample);
+  assert.equal(quotas.length, 4);
+  assert.deepEqual(quotas[0], {
+    label: "Gemini Models · Weekly",
+    remaining: 96,
+    resetsAt: Math.floor(Date.parse("2026-11-03T22:33:23Z") / 1000),
+  });
+  assert.deepEqual(quotas[1], {
+    label: "Gemini Models · Five Hour",
+    remaining: 89,
+    resetsAt: Math.floor(Date.parse("2026-10-29T23:14:35Z") / 1000),
+  });
+  assert.deepEqual(quotas[3], {
+    label: "Gemini 4 Argon · Gemini 4 Argon Weekly",
+    remaining: 0,
+    resetsAt: Math.floor(Date.parse("2026-11-03T15:43:53Z") / 1000),
+  });
+  assert.deepEqual(agyQuotas(""), []);
 });
 
 test("Antigravity recognizes an existing login without waiting for another OAuth link", async () => {

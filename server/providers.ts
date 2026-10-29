@@ -34,7 +34,11 @@ export function quotaWindows(result: any): Quota[] {
 export function transcript(chat: Chat): string {
   const history = chat.messages
     .filter(
-      (message) => message.role === "user" || message.status !== "running",
+      (message) =>
+        message.role === "user" ||
+        (message.status !== "running" &&
+          (Boolean(message.text) ||
+            Boolean(message.events && message.events.length > 0))),
     )
     .map((message) => ({
       role: message.role,
@@ -77,6 +81,35 @@ export function agyModels(output: string): Model[] {
     const match = /^([a-z0-9][a-z0-9._-]*)(?:\t+| {2,})(\S.*)$/.exec(line.trim());
     return match ? [{ id: match[1], name: match[2].trim() }] : [];
   });
+}
+export function agyQuotas(output: string): Quota[] {
+  const clean = output.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+  const quotas: Quota[] = [];
+  for (const line of clean.split(/\r?\n/)) {
+    const parts = line.split("\t").map((p) => p.trim());
+    if (parts.length >= 3) {
+      const [category, limitType, remainingStr, resetStr] = parts;
+      const match = /(\d+)\s*%/.exec(remainingStr);
+      if (match) {
+        const remaining = parseInt(match[1], 10);
+        let resetsAt: number | null = null;
+        if (resetStr) {
+          const parsed = Date.parse(resetStr);
+          if (!Number.isNaN(parsed)) resetsAt = Math.floor(parsed / 1000);
+        }
+        const cleanedType = limitType
+          .replace(/\s*Limit\s*Remaining/i, "")
+          .replace(/\s*Limit/i, "")
+          .trim();
+        quotas.push({
+          label: `${category}${cleanedType ? ` · ${cleanedType}` : ""}`,
+          remaining,
+          resetsAt,
+        });
+      }
+    }
+  }
+  return quotas;
 }
 interface AgyLoginSession {
   channel?: ClientChannel; output: string; selected: boolean; url?: string;
@@ -261,8 +294,21 @@ export class Providers {
             "Antigravity hat keinen Modellkatalog geliefert. Bitte die Anmeldung erneut versuchen.",
           );
         account.status = "authenticated";
-        account.quotaError =
-          "Die CLI liefert hier keine strukturierte Quota-API. Aktuelle Modelllimits mit /usage im Account-Terminal ansehen.";
+        try {
+          const usageResult = await this.remote.run(
+            await this.remote.accountCommand(
+              account.id,
+              "agy -p '/usage'",
+              "antigravity",
+            ),
+          );
+          account.quotas = agyQuotas(usageResult.stdout);
+          delete account.quotaError;
+        } catch {
+          account.quotas = [];
+          account.quotaError =
+            "Kontingente konnten nicht abgerufen werden. Aktuelle Modelllimits mit /usage im Account-Terminal ansehen.";
+        }
       } else {
         const runtime = await this.runtime(account);
         if (account.provider === "codex") {
@@ -539,7 +585,7 @@ export class Providers {
         const configPath =
           this.remote.accountDirectory(account.id) +
           "/home/.gemini/config/mcp_config.json";
-        const configure = `const fs=require('node:fs');const p=process.argv[1];const c=fs.existsSync(p)?JSON.parse(fs.readFileSync(p,'utf8')):{};c.mcpServers??={};delete c.mcpServers.cloudki_browser;if(process.argv[2]!=='null')c.mcpServers.cloudki_browser=JSON.parse(process.argv[2]);fs.mkdirSync(require('node:path').dirname(p),{recursive:true,mode:448});fs.writeFileSync(p+'.tmp',JSON.stringify(c),{mode:384});fs.renameSync(p+'.tmp',p);`;
+        const configure = `const fs=require('node:fs');const p=process.argv[1];let c={};try{if(fs.existsSync(p)){const r=fs.readFileSync(p,'utf8').trim();if(r)c=JSON.parse(r);}}catch{}c.mcpServers??={};delete c.mcpServers.cloudki_browser;if(process.argv[2]!=='null')c.mcpServers.cloudki_browser=JSON.parse(process.argv[2]);fs.mkdirSync(require('node:path').dirname(p),{recursive:true,mode:448});fs.writeFileSync(p+'.tmp',JSON.stringify(c),{mode:384});fs.renameSync(p+'.tmp',p);`;
         await this.remote.run(
           `node -e ${q(configure)} ${q(configPath)} ${q(JSON.stringify(browser ? browserServer : null))}`,
         );
