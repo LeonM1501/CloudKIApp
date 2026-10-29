@@ -50,9 +50,10 @@ function Desktop({ api, appId }: { api: BridgeApi; appId: AppId }) {
       toggleKeyboard();
     };
     surface.addEventListener("gesturestart", gesture, true);
-    void Promise.all([api.socket("desktop", appId), import("@novnc/novnc")])
-      .then(([value, { default: RFB }]) => {
-        socket = value;
+    void import("@novnc/novnc")
+      .then(async ({ default: RFB }) => {
+        if (disposed) return;
+        socket = await api.socket("desktop", appId);
         if (disposed) {
           socket.close();
           return;
