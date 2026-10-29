@@ -125,7 +125,9 @@ done
         active.on("error", (error: Error) => { clearTimeout(timer); reject(error); });
         active.on("close", () => {
           clearTimeout(timer);
-          this.sessions.delete(id); this.ports.delete(id); this.renderers.delete(id);
+          if (this.sessions.get(id) === active) {
+            this.sessions.delete(id); this.ports.delete(id); this.renderers.delete(id);
+          }
           reject(new Error(stderr || "App konnte nicht gestartet werden. Pakete, Display und Ports prüfen."));
         });
       });
