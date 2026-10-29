@@ -1,168 +1,86 @@
-export type ProviderType = 'codex' | 'antigravity' | 'opencode';
-
-export type PermissionMode =
-  | 'ask'          // Genehmigung anfordern (Zum Bearbeiten externer Dateien und für die Internetnutzung immer nachfragen)
-  | 'auto_safe'    // Für mich genehmigen (Nur bei potenziell unsicheren Aktionen nachfragen)
-  | 'full_access'  // Vollzugriff (Uneingeschränkter Zugriff auf das Internet und alle Dateien auf deinem Computer)
-  | 'restricted';  // Eingeschränkter Zugriff (Eingeschränkter Zugriff auf das Internet und alle Dateien auf deinem Computer)
-
-export type EffortLevel = 'Niedrig' | 'Mittel' | 'Hoch' | 'Max';
-
-export interface QuotaMetric {
-  label: string;           // e.g. "5 Std." or "Wöchentlich" or "Gemini • 5 Std."
-  percentRemaining: number; // 0..100
-  resetAt: string;         // e.g. "18:26" or "4. Nov."
-  modelGroup?: string;     // e.g. "Codex & Work", "Gemini", "Claude"
-}
-
-export interface ModelOption {
+export type Provider = "codex" | "opencode" | "antigravity";
+export type Permission = "ask" | "workspace" | "read-only" | "full";
+export type AppId = "browser" | "blender" | "unity";
+export interface Model {
   id: string;
-  name: string;            // e.g. "GPT-6.1 Terra", "GPT-6.1 Sol", "Gemini 4 Argon", "Claude 4.5 Sonnet"
-  provider: ProviderType;
-  accountId: string;
-  accountLabel: string;    // e.g. "Codex #1 (Haupt)", "Antigravity #2"
-  description?: string;
-  isDefault?: boolean;
-  available: boolean;
-  quotaPercent: number;
-  supportsEffort: boolean;
+  name: string;
+  efforts?: string[];
 }
-
-export interface ProviderAccount {
+export interface Quota {
+  label: string;
+  remaining: number;
+  resetsAt: number | null;
+}
+export interface Account {
   id: string;
-  provider: ProviderType;
-  index: number;           // 1, 2, 3...
-  label: string;           // e.g. "Codex Account #1", "Antigravity Account #1"
-  usernameOrEmail: string;
-  status: 'unauthenticated' | 'pending_device_code' | 'authenticated';
-  deviceCode?: string;     // e.g. "K9X4-7M2P"
-  authUrl?: string;        // e.g. "https://auth.openai.com/device"
-  quotas: QuotaMetric[];
-  models: ModelOption[];
+  provider: Provider;
+  label: string;
+  status: "disconnected" | "ready" | "authenticated" | "error";
+  identity?: string;
+  error?: string;
+  checkedAt?: string;
+  models: Model[];
+  quotas: Quota[];
+  quotaError?: string;
+  login?: { url: string; code: string };
 }
-
-export interface HardwareProfile {
-  detected: boolean;
-  isSimulatedVps: boolean;
-  hostname: string;
-  os: string;
-  cpuModel: string;
-  cpuCores: number;
-  ramTotalGb: number;
-  hasDedicatedGpu: boolean;
-  gpuName: string | null;
-  gpuVramGb: number | null;
-  renderBackend: 'NVIDIA VirtualGL / Hardware GPU' | 'Mesa LLVMpipe (CPU Software Rendering)';
-  displayProtocol: 'Xpra / KasmVNC Single-Window (Rootless)';
-  driverFlags: string;
-}
-
-export interface ServerConnectionConfig {
+export interface Connection {
   host: string;
   port: number;
   username: string;
-  password?: string;
-  useSimulatedVps?: boolean;
+  fingerprint: string;
   connected: boolean;
-  lastConnectedAt?: string;
-  hardware: HardwareProfile;
+  home?: string;
+  hardware?: string;
 }
-
-export interface UserProfile {
-  username: string;        // e.g. "xLeonTTV"
-  handle: string;          // e.g. "@leonm1501"
-  initials: string;        // e.g. "XL"
-  avatarColor: string;     // e.g. "#b08d57"
-  planName: string;        // e.g. "Plus"
-  onboardingCompleted: boolean;
-  stats: {
-    totalTokens: string;   // "3,1 Mrd."
-    peakTokens: string;    // "204 Mio."
-    longestTask: string;   // "2 Std. 48 Min."
-    longestStreak: string; // "25 Tage"
-    currentStreak: string; // "25 Tage"
-  };
+export interface Attachment {
+  name: string;
+  path: string;
+  size: number;
 }
-
-export interface ToolExecutionStep {
+export interface Message {
   id: string;
-  type: 'mcp' | 'command' | 'image' | 'file' | 'browser' | 'handoff' | 'unity' | 'blender';
-  title: string;
-  detail?: string;
-  command?: string;
-  output?: string;
-  status: 'running' | 'done' | 'error';
-  timestamp: string;
-}
-
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: string;
-  provider?: ProviderType;
-  accountId?: string;
-  accountLabel?: string;
-  modelName?: string;
-  effort?: EffortLevel;
-  thinkingText?: string;
-  toolSteps?: ToolExecutionStep[];
-  attachments?: { name: string; type: string; size?: string }[];
-  handoffFrom?: {
-    previousModel: string;
-    previousAccount: string;
-    newModel: string;
-    newAccount: string;
-  };
-}
-
-export interface ChatThread {
-  id: string;
-  title: string;
-  projectId: string | null; // null = Ohne Projekt / Angeheftet
-  pinned: boolean;
+  role: "user" | "assistant";
+  text: string;
   createdAt: string;
-  updatedAt: string;
-  hasWarning?: boolean;
-  activeAccountId: string;
-  activeModelId: string;
-  effort: EffortLevel;
-  permissionMode: PermissionMode;
-  messages: ChatMessage[];
-  outputs?: { title: string; type: string; path: string }[];
-  sources?: { name: string; type: string }[];
+  accountId?: string;
+  model?: string;
+  attachments?: Attachment[];
+  status?: "running" | "complete" | "failed" | "cancelled";
+  error?: string;
+  events?: { id: string; title: string; detail: string; status?: string }[];
+  tokens?: number;
 }
-
-export interface ProjectFolder {
+export interface Chat {
+  id: string;
+  title: string;
+  projectId: string | null;
+  pinned: boolean;
+  messages: Message[];
+  updatedAt: string;
+}
+export interface Project {
   id: string;
   name: string;
-  serverPath: string;
-  pinned?: boolean;
+  path: string;
 }
-
-export interface BrowserAiCursor {
-  visible: boolean;
-  x: number; // 0..100 percentage
-  y: number; // 0..100 percentage
-  action: 'idle' | 'moving' | 'clicking' | 'typing' | 'scrolling' | 'analyzing';
-  label: string;
+export interface State {
+  version: 2;
+  profile: { username: string; onboardingComplete: boolean };
+  connection: Connection | null;
+  accounts: Account[];
+  projects: Project[];
+  chats: Chat[];
 }
-
-export interface RemoteAppStatus {
-  id: 'unity' | 'blender';
-  name: string;
-  installed: boolean;
-  installing: boolean;
-  installProgress: number;
-  installStepText: string;
-  running: boolean;
-  version: string;
-  availableVersions: string[];
-  loggedInUser: string | null;
-  windowTitle: string;
-  renderMode: string;
-  fps: number;
-  currentProject: string | null;
-  activeSceneOrModel: string;
-  lastAiAction: string | null;
+export interface Approval {
+  id: string;
+  chatId: string;
+  title: string;
+  detail: string;
+  options: { id: string; name: string }[];
 }
+export const PROVIDERS: Record<Provider, string> = {
+  codex: "Codex",
+  opencode: "OpenCode",
+  antigravity: "Antigravity",
+};

@@ -3,3 +3,11 @@ build_output/
 Payload/
 *.ipa
 .DS_Store
+
+.projectatlas/
+.bridge-data/
+.env
+.env.*
+!.env.example
+dist/
+coverage/

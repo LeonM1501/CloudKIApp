@@ -2,25 +2,34 @@ name: Build Unsigned iPadOS IPA (Sideloadly / AltStore / SideStore)
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build-ipad-ipa:
     name: Build CloudKIBridge-iPadOS.ipa
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: '22'
+          node-version: "22"
 
       - name: Install Dependencies & Build iPad Web Bundle
         run: |
-          npm install
+          npm ci
+          npm test
           npm run build
 
       - name: Sync Capacitor iOS Project
@@ -29,14 +38,6 @@ jobs:
             npx cap add ios
           fi
           npx cap sync ios
-
-      - name: Configure iPadOS Fullscreen, Stage Manager & ATS in Info.plist
-        run: |
-          PLIST="ios/App/App/Info.plist"
-          /usr/libexec/PlistBuddy -c "Add :UIRequiresFullScreen bool false" "$PLIST" 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Set :UIRequiresFullScreen false" "$PLIST" 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "$PLIST" 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true" "$PLIST" 2>/dev/null || true
 
       - name: Resolve Swift Packages & Compile Unsigned iPadOS App (Xcode)
         run: |
@@ -60,7 +61,7 @@ jobs:
           zip -r9 CloudKIBridge-iPadOS.ipa Payload
 
       - name: Upload CloudKIBridge-iPadOS.ipa Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: CloudKIBridge-iPadOS-IPA
           path: CloudKIBridge-iPadOS.ipa
