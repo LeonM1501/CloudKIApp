@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import { createServer } from "node:http";
 import { randomBytes, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { WebSocketServer, WebSocket, createWebSocketStream } from "ws";
@@ -374,6 +375,63 @@ export async function createBridge(options: Options) {
     void pushProject(project).catch(() => {}).finally(() => projectWork.delete(project.id));
   });
   app.post("/api/chats", async (req, res) => {
+    if (req.body.mode === "update-assistant") {
+      const existing = store.state.chats.find(
+        (chat) => chat.kind === "update-assistant",
+      );
+      if (existing) {
+        res.json(existing);
+        return;
+      }
+      if (store.state.chats.length >= 200)
+        throw new HttpError(
+          400,
+          "Maximal 200 Chats. Alte Chats exportieren und löschen.",
+        );
+      const opencode = store.state.accounts.find(
+        (account) =>
+          account.provider === "opencode" &&
+          account.models.some(
+            (model) => model.id === "opencode/deepseek-v4.1-flash-free",
+          ),
+      );
+      const context = await readFile(
+        new URL("../docs/UPDATE_ASSISTANT.md", import.meta.url),
+        "utf8",
+      ).catch(
+        () =>
+          "CloudKI Bridge, Repository https://github.com/LeonM1501/CloudKIApp. Web-Updates laufen über den Release-Tag web-latest, native Builds über ipa-latest.",
+      );
+      const now = new Date().toISOString();
+      const chat: Chat = {
+        id: randomUUID(),
+        title: "CloudKI Update-Assistent",
+        projectId: null,
+        pinned: true,
+        kind: "update-assistant",
+        systemPrompt: context,
+        messages: [
+          {
+            id: randomUUID(),
+            role: "assistant",
+            text:
+              "Ich bin dein CloudKI Update-Assistent. Ich kenne das Repository, den Live-Update-Workflow und die Unity-/Display-Themen.\n\n" +
+              "Frag mich zum Beispiel: „Baue eine neue Funktion ein und veröffentliche das Web-Update“, „Warum startet Unity nicht?“ oder „Brauche ich dafür eine neue IPA?“\n\n" +
+              "Ich antworte mit OpenCode und dem Modell DeepSeek V4.1 Flash Free. Reine Web-Änderungen kommen über den Update-Button in den Einstellungen an; native Änderungen brauchen weiterhin eine neue IPA.",
+            createdAt: now,
+            accountId: opencode?.id,
+            model: "opencode/deepseek-v4.1-flash-free",
+            status: "complete",
+            events: [],
+          },
+        ],
+        updatedAt: now,
+      };
+      store.state.chats.unshift(chat);
+      await save();
+      res.status(201).json(chat);
+      return;
+    }
     if (store.state.chats.length >= 200)
       throw new HttpError(
         400,

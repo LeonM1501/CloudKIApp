@@ -25,6 +25,7 @@ import {
   Server,
   Settings,
   ShieldCheck,
+  Sparkles,
   Square,
   Star,
   Trash2,
@@ -45,6 +46,7 @@ import { Modal } from "./components/Modal";
 import { Setup } from "./components/Setup";
 import { RemoteWorkspace } from "./components/RemoteWorkspace";
 import { Terminal } from "./components/Terminal";
+import { AppUpdate } from "./components/AppUpdate";
 
 function preference<T>(key: string, fallback: T): T {
   try {
@@ -109,6 +111,12 @@ function BridgeLogin({
             const api = new BridgeApi(base, token.trim());
             const state = await api.request<State>("/api/state");
             remember("bridge", base);
+            try {
+              // Nur für die Sitzung, damit ein Live-Update-Reload nicht abmeldet.
+              sessionStorage.setItem("cloudki.token", token.trim());
+            } catch {
+              /* Sitzungsspeicher ist optional. */
+            }
             onConnect(api, state);
           } catch (error) {
             setError((error as Error).message);
@@ -166,6 +174,7 @@ function BridgeLogin({
 export default function App() {
   const [api, setApi] = useState<BridgeApi | null>(null);
   const [state, setState] = useState<State | null>(null);
+  const [restoring, setRestoring] = useState(true);
   const [online, setOnline] = useState(false);
   const [error, setError] = useState("");
   const [setup, setSetup] = useState(false);
@@ -224,6 +233,39 @@ export default function App() {
       setError((error as Error).message);
     }
   };
+  useEffect(() => {
+    let cancelled = false;
+    let token = "";
+    try {
+      token = sessionStorage.getItem("cloudki.token") ?? "";
+    } catch {
+      /* Sitzungsspeicher ist optional. */
+    }
+    const saved = preference("bridge", "");
+    const sameOrigin = ["http:", "https:"].includes(location.protocol);
+    if (!token || (!saved && !sameOrigin)) {
+      setRestoring(false);
+      return;
+    }
+    const candidate = new BridgeApi(saved, token);
+    void candidate
+      .request<State>("/api/state")
+      .then((result) => {
+        if (cancelled) return;
+        setApi(candidate);
+        setState(result);
+        setSetup(
+          !result.profile.onboardingComplete || !result.connection?.connected,
+        );
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setRestoring(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     remember("theme", theme);
@@ -362,6 +404,20 @@ export default function App() {
     setSelectedChat(value.id);
     setProjectId(value.projectId);
     nearEnd.current = true;
+    if (value.kind === "update-assistant") {
+      const opencode = state?.accounts.find(
+        (item) =>
+          item.provider === "opencode" &&
+          item.models.some(
+            (entry) => entry.id === "opencode/deepseek-v4.1-flash-free",
+          ),
+      );
+      if (opencode) {
+        setAccountId(opencode.id);
+        setModelId("opencode/deepseek-v4.1-flash-free");
+        setEffort("");
+      }
+    }
     if (window.innerWidth < 850) setSidebar(false);
   };
   const newChat = () => {
@@ -369,6 +425,31 @@ export default function App() {
     setComposer("");
     setAttachments([]);
     if (window.innerWidth < 850) setSidebar(false);
+  };
+  const openUpdateAssistant = () => {
+    void run(async () => {
+      if (!api) return;
+      const result = await api.request<Chat>("/api/chats", "POST", {
+        mode: "update-assistant",
+      });
+      const opencode = state?.accounts.find(
+        (item) =>
+          item.provider === "opencode" &&
+          item.models.some(
+            (entry) => entry.id === "opencode/deepseek-v4.1-flash-free",
+          ),
+      );
+      if (opencode) {
+        setAccountId(opencode.id);
+        setModelId("opencode/deepseek-v4.1-flash-free");
+        setEffort("");
+      }
+      await refresh();
+      setSelectedChat(result.id);
+      setProjectId(null);
+      setSettings(false);
+      if (window.innerWidth < 850) setSidebar(false);
+    });
   };
   const openModels = async () => {
     setModelsOpen(true);
@@ -512,6 +593,16 @@ export default function App() {
     remember("sidebarWidth", sidebarWidth);
     remember("split", split);
   }, [sidebarWidth, split]);
+  if (restoring)
+    return (
+      <main className="welcome">
+        <div className="welcome-mark">
+          <Columns2 size={29} />
+        </div>
+        <div className="eyebrow">CLOUDKI BRIDGE</div>
+        <p className="welcome-copy">Verbindung wird wiederhergestellt …</p>
+      </main>
+    );
   if (!api || !state)
     return (
       <BridgeLogin
@@ -652,6 +743,13 @@ export default function App() {
               <button className="new-chat" onClick={newChat}>
                 <Plus size={17} />
                 Neuer Chat
+              </button>
+              <button
+                className="new-chat assistant-chat"
+                onClick={openUpdateAssistant}
+              >
+                <Sparkles size={16} />
+                Update-Assistent
               </button>
               {visibleChats.some((value) => value.pinned) && (
                 <section>
@@ -1564,6 +1662,7 @@ export default function App() {
               {[
                 ["general", "Allgemein"],
                 ["appearance", "Darstellung"],
+                ["update", "App-Update"],
                 ["usage", "Token-Nutzung"],
                 ["connection", "Verbindungen"],
               ].map(([key, label]) => (
@@ -1669,6 +1768,9 @@ export default function App() {
                   </p>
                 </>
               )}
+              {settingsTab === "update" && (
+                <AppUpdate onOpenAssistant={openUpdateAssistant} />
+              )}
               {settingsTab === "usage" && (
                 <>
                   <h3>Token-Nutzung</h3>
@@ -1739,6 +1841,11 @@ export default function App() {
                   </button>
                   <button
                     onClick={() => {
+                      try {
+                        sessionStorage.removeItem("cloudki.token");
+                      } catch {
+                        /* Sitzungsspeicher ist optional. */
+                      }
                       setApi(null);
                       setState(null);
                       setSettings(false);

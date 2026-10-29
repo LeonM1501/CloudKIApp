@@ -6,6 +6,32 @@ from pathlib import Path
 import shutil
 
 
+BLOCKED_IDS = {
+    "openbox.desktop",
+    "x11vnc.desktop",
+    "blender.desktop",
+    "unityhub.desktop",
+    "chromium.desktop",
+    "chromium-browser.desktop",
+    "system-config-printer.desktop",
+    "zutty.desktop",
+    "xterm.desktop",
+    "uxterm.desktop",
+    "gnome-terminal.desktop",
+    "org.gnome.terminal.desktop",
+    "konsole.desktop",
+}
+BLOCKED_NAMES = {
+    "print settings",
+    "zutty",
+    "xterm",
+    "uxterm",
+    "terminal",
+    "system monitor",
+    "software & updates",
+}
+
+
 def desktop_apps(roots):
     apps = []
     seen = set()
@@ -28,7 +54,7 @@ def desktop_apps(roots):
                     continue
                 if entry.get("TryExec") and not shutil.which(entry["TryExec"]):
                     continue
-                if desktop_id.lower() in {"openbox.desktop", "x11vnc.desktop", "blender.desktop", "unityhub.desktop", "chromium.desktop", "chromium-browser.desktop"}:
+                if desktop_id.lower() in BLOCKED_IDS or entry["Name"].strip().lower() in BLOCKED_NAMES:
                     continue
                 apps.append({"id": "desktop-" + hashlib.sha256(desktop_id.encode()).hexdigest()[:12], "name": entry["Name"][:100], "desktopId": desktop_id})
             except (configparser.Error, KeyError, OSError, UnicodeError):

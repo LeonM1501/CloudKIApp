@@ -1,0 +1,65 @@
+name: CloudKI Live-Update veröffentlichen
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cloudki-live-update
+  cancel-in-progress: false
+
+jobs:
+  publish-web-bundle:
+    name: Web-Bundle bauen und als web-latest veröffentlichen
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install Dependencies, Test and Build
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      - name: Create ZIP and Update Manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          NATIVE_VERSION=$(node -e "const fs=require('fs');const s=fs.readFileSync('src/version.ts','utf8');const m=s.match(/APP_VERSION\\s*=\\s*\"([^\"]+)\"/);process.stdout.write(m?m[1]:'')")
+          BUNDLE_ID="web-${VERSION}-${GITHUB_SHA::7}"
+          (cd dist && zip -r9 ../cloudki-web.zip .)
+          CHECKSUM=$(sha256sum cloudki-web.zip | cut -d' ' -f1)
+          export BUNDLE_ID CHECKSUM NATIVE_VERSION VERSION
+          node -e '
+            const fs = require("fs");
+            const manifest = {
+              version: process.env.VERSION + "+" + process.env.GITHUB_SHA.slice(0, 7),
+              bundleId: process.env.BUNDLE_ID,
+              checksum: process.env.CHECKSUM,
+              commit: process.env.GITHUB_SHA,
+              builtAt: new Date().toISOString(),
+              minNativeVersion: process.env.NATIVE_VERSION || process.env.VERSION,
+              notes: "Automatisch veröffentlicht durch GitHub Actions."
+            };
+            fs.writeFileSync("latest.json", JSON.stringify(manifest, null, 2));
+          '
+          gh release view web-latest >/dev/null 2>&1 || \
+            gh release create web-latest --title "CloudKI Live-Update" --notes-file latest.json
+          gh release upload web-latest cloudki-web.zip latest.json --clobber
+          gh release edit web-latest --notes-file latest.json

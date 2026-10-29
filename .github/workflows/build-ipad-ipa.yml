@@ -8,7 +8,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: cloudki-ipa-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build-ipad-ipa:
@@ -39,6 +43,32 @@ jobs:
           fi
           npx cap sync ios
 
+      - name: Select newest installed Xcode
+        run: |
+          set -euo pipefail
+          XCODE=$(python3 - <<'PY'
+          import glob, plistlib
+          best = None
+          for path in glob.glob("/Applications/Xcode*.app"):
+              try:
+                  with open(path + "/Contents/version.plist", "rb") as handle:
+                      version = plistlib.load(handle).get("CFBundleShortVersionString", "0")
+                  key = tuple(int(part) for part in version.split("."))
+              except Exception:
+                  continue
+              if best is None or key > best[0]:
+                  best = (key, path)
+          print(best[1] if best else "")
+          PY
+          )
+          if [ -z "$XCODE" ]; then
+            echo "Kein Xcode gefunden." >&2
+            exit 1
+          fi
+          echo "Using $XCODE"
+          "$XCODE/Contents/Developer/usr/bin/xcodebuild" -version
+          sudo xcode-select -s "$XCODE"
+
       - name: Resolve Swift Packages & Compile Unsigned iPadOS App (Xcode)
         run: |
           xcodebuild -resolvePackageDependencies -project ios/App/App.xcodeproj -scheme App
@@ -66,3 +96,15 @@ jobs:
           name: CloudKIBridge-iPadOS-IPA
           path: CloudKIBridge-iPadOS.ipa
           retention-days: 30
+
+      - name: Publish IPA as ipa-latest Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release view ipa-latest >/dev/null 2>&1 || \
+            gh release create ipa-latest \
+              --title "CloudKI Bridge IPA (latest)" \
+              --notes "Unsignierte iPadOS-IPA. Vor der Installation mit Sideloadly, AltStore, SideStore oder Feather signieren."
+          gh release upload ipa-latest CloudKIBridge-iPadOS.ipa --clobber

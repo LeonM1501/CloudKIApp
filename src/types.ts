@@ -59,6 +59,9 @@ export interface Chat {
   pinned: boolean;
   messages: Message[];
   updatedAt: string;
+  /** Optionaler, vom Besitzer vorgegebener Kontext für Spezialchats. */
+  systemPrompt?: string;
+  kind?: "update-assistant";
 }
 export interface Project {
   id: string;

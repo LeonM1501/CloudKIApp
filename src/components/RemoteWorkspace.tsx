@@ -133,6 +133,15 @@ export function RemoteWorkspace({
   const [busy, setBusy] = useState(false);
   const [install, setInstall] = useState<AppId | null>(null);
   const [installApproved, setInstallApproved] = useState(false);
+  const installed =
+    tab === "unity"
+      ? apps.available.includes("unityhub")
+      : tab === "blender"
+        ? apps.available.includes("blender")
+        : tab === "browser"
+          ? apps.available.includes("chromium") ||
+            apps.available.includes("chromium-browser")
+          : true;
   const refresh = async () => {
     try {
       setApps(await api.request("/api/apps"));
@@ -252,8 +261,19 @@ export function RemoteWorkspace({
                   ? "Ein echter Chromium-Browser. Seiten öffnen, anmelden und navigieren – direkt hier."
                   : "Die echte Linux-App wird in einer eigenen Display-Sitzung geöffnet. Du steuerst sie per Touch, Maus oder Tastatur."}
               </p>
+              {!installed && !tab.startsWith("desktop-") && (
+                <p className="update-note" role="status">
+                  {tab === "unity"
+                    ? "Unity Hub ist auf dem Server noch nicht installiert. Der Installieren-Dialog richtet jetzt das offizielle Unity-Repository ein."
+                    : `${tab === "browser" ? "Chromium" : "Blender"} ist auf dem Server noch nicht installiert. Zuerst „Installieren“ wählen.`}
+                </p>
+              )}
               <div className="actions">
-                <button className="primary" disabled={busy} onClick={start}>
+                <button
+                  className="primary"
+                  disabled={busy || !installed}
+                  onClick={start}
+                >
                   <Play size={16} />
                   {busy ? "Startet …" : "App starten"}
                 </button>
@@ -270,10 +290,13 @@ export function RemoteWorkspace({
               <p className="subtle small">
                 {tab.startsWith("desktop-")
                   ? "Weitere Programme kannst du von der KI installieren lassen. Installierte Linux-Apps erscheinen hier automatisch."
-                  : tab === "unity"
-                  ? "Unity Hub benötigt das offizielle Unity-Paketrepository. Editor-Version und Lizenz wählst du im Hub."
-                  : "Installation über apt auf Debian/Ubuntu. Ein normaler Linux-Benutzer und sudo sind nötig."}
+                  : "Die App läuft auf einem virtuellen Xvfb-Display. Ein HDMI-Kabel oder ein angeschlossener Monitor ist nicht nötig."}
               </p>
+              {tab === "unity" && (
+                <p className="subtle small">
+                  Unity Hub kommt aus dem offiziellen Unity-Repository. Editor-Version, Lizenz und Anmeldung wählst du im Hub.
+                </p>
+              )}
             </div>
           )}
         </>
@@ -294,22 +317,39 @@ export function RemoteWorkspace({
               <p>
                 Installiert die App sowie Xvfb, x11vnc und Openbox auf deinem
                 Server. Die echte Paketmanager-Ausgabe erscheint im Terminal;
-                ein sudo-Passwort gibst du dort ein.
+                ein sudo-Passwort gibst du dort ein. Die App läuft danach auf
+                einem virtuellen Display – ein HDMI-Anschluss ist nicht nötig.
               </p>
-              <pre>
-                sudo apt-get update{"\n"}sudo apt-get install -y xvfb x11vnc
-                openbox x11-utils libgtk-3-bin dbus-x11 python3 mesa-utils{" "}
-                {install === "unity"
-                  ? "unityhub"
-                  : install === "blender"
+              {install === "unity" ? (
+                <pre>
+                  sudo apt-get update{"\n"}
+                  sudo apt-get install -y xvfb x11vnc openbox x11-utils
+                  libgtk-3-bin dbus-x11 python3 mesa-utils curl ca-certificates
+                  gnupg{"\n"}
+                  sudo install -d -m 0755 /etc/apt/keyrings{"\n"}
+                  curl -fsSL https://hub.unity3d.com/linux/keys/public | sudo
+                  gpg --dearmor --yes -o /etc/apt/keyrings/unityhub.gpg{"\n"}
+                  echo "deb [signed-by=/etc/apt/keyrings/unityhub.gpg]
+                  https://hub.unity3d.com/linux/repos/deb stable main" | sudo
+                  tee /etc/apt/sources.list.d/unityhub.list{"\n"}
+                  sudo apt-get update{"\n"}
+                  sudo apt-get install -y unityhub
+                </pre>
+              ) : (
+                <pre>
+                  sudo apt-get update{"\n"}sudo apt-get install -y xvfb x11vnc
+                  openbox x11-utils libgtk-3-bin dbus-x11 python3 mesa-utils
+                  curl ca-certificates gnupg{" "}
+                  {install === "blender"
                     ? "blender"
                     : install === "browser" ? "chromium" : ""}
-              </pre>
+                </pre>
+              )}
               {install === "unity" && (
                 <p>
-                  Wenn das offizielle Unity-Repository noch fehlt, bricht apt
-                  mit einer Fehlermeldung ab. Es werden keine
-                  Drittanbieter-Installer verwendet.
+                  Das ist das offizielle Unity-Repository. Es werden keine
+                  Drittanbieter-Installer verwendet. Lizenz und Anmeldung
+                  erfolgen anschließend im Unity Hub.
                 </p>
               )}
               <button

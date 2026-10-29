@@ -16,6 +16,7 @@
   "dependencies": {
     "@capacitor/core": "^8.6.0",
     "@capacitor/ios": "^8.6.0",
+    "@capawesome/capacitor-live-update": "^8.7.1",
     "@novnc/novnc": "1.7.0",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",

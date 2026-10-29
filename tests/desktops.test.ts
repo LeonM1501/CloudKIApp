@@ -23,6 +23,8 @@ test("desktop discovery honors user overrides and excludes hidden, terminal and 
     await writeFile(join(user, "terminal.desktop"), entry("CLI", "Terminal=true\n"));
     await writeFile(join(user, "missing.desktop"), entry("Missing", "TryExec=/nonexistent/cloudki-fixture\n"));
     await writeFile(join(user, "broken.desktop"), "invalid desktop entry");
+    await writeFile(join(system, "system-config-printer.desktop"), entry("Print Settings"));
+    await writeFile(join(system, "zutty.desktop"), entry("Zutty"));
     const { stdout } = await promisify(execFile)("python3", ["-c", "import runpy,json,sys; ns=runpy.run_path(sys.argv[1]); print(json.dumps(ns['desktop_apps'](sys.argv[2:])))", resolve("scripts/desktop-apps.py"), user, system]);
     const apps = JSON.parse(stdout);
     assert.equal(apps.length, 1);
@@ -45,4 +47,8 @@ test("only discovered apps may be started or streamed", async () => {
   assert.equal(desktops.appId("desktop-fixture"), "desktop-fixture");
   assert.throws(() => desktops.appId("../../bin/sh"), /App nicht gefunden/);
   assert.throws(() => desktops.port("desktop-fixture"), /App zuerst starten/);
+  const unityInstall = desktops.installCommand("unity");
+  assert.match(unityInstall, /hub\.unity3d\.com\/linux\/repos\/deb/);
+  assert.match(unityInstall, /unityhub/);
+  assert.match(desktops.installCommand("browser"), /chromium/);
 });
