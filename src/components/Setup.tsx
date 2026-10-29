@@ -208,7 +208,11 @@ export function Accounts({
           </p>
         </Modal>
       )}
-      {antigravity && <AntigravityLogin api={api} accountId={antigravity.id} refresh={refresh} onClose={() => setAntigravity(null)} />}
+      {antigravity && <AntigravityLogin api={api} accountId={antigravity.id} refresh={async () => {
+        const account = await api.request<Account>(`/api/accounts/${antigravity.id}/refresh`, "POST");
+        await refresh();
+        if (account.error) throw new Error(account.error);
+      }} onClose={() => setAntigravity(null)} />}
       {terminal && (
         <Modal
           title={`${terminal.label} · Anmeldung`}

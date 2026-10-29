@@ -394,9 +394,11 @@ export class Providers {
     session.channel.write(code + "\r");
     session.sent = true;
   }
-  cancelLogin(id: string) {
+  cancelLogin(id: string, force = true) {
     const session = this.agyLogins.get(id);
     if (!session) return;
+    // Ein gesendeter OAuth-Code muss auch beim Schließen des Dialogs fertig verarbeitet werden.
+    if (session.sent && !force) return;
     clearTimeout(session.timer);
     session.channel?.signal("TERM");
     session.channel?.end();

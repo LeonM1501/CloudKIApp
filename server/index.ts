@@ -272,7 +272,7 @@ export async function createBridge(options: Options) {
     res.json({ ok: true });
   });
   app.delete("/api/accounts/:id/login", (req, res) => {
-    providers.cancelLogin(accountFor(req.params.id).id);
+    providers.cancelLogin(accountFor(req.params.id).id, false);
     res.json({ ok: true });
   });
   app.post("/api/accounts/:id/prepare", (req, res) => {

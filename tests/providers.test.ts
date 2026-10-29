@@ -297,6 +297,9 @@ test("Antigravity login survives UI polling and exposes a complete browser link"
     providers.submitLoginCode(account, "fixture-auth-code");
     assert.equal(wire.input.at(-1), "fixture-auth-code\r");
     assert.equal((await providers.login(account)).sent, true);
+    providers.cancelLogin(account.id, false);
+    assert.equal((await providers.login(account)).sent, true);
+    assert.equal(opened, 1);
     providers.cancelLogin(account.id);
     assert.throws(() => providers.submitLoginCode(account, "expired"), /abgelaufen/);
   } finally {
