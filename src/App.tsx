@@ -211,6 +211,8 @@ export default function App() {
   const [projectName, setProjectName] = useState("");
   const [projectBusy, setProjectBusy] = useState(false);
   const [githubLogin, setGithubLogin] = useState(false);
+  const [githubStatus, setGithubStatus] = useState<{ connected: boolean; login: string | null } | null>(null);
+  const [repoInput, setRepoInput] = useState("");
   const [browserAttached, setBrowserAttached] = useState(false);
   const [plus, setPlus] = useState(false);
   const [skills, setSkills] = useState<
@@ -234,6 +236,14 @@ export default function App() {
       setError((error as Error).message);
     }
   };
+  useEffect(() => {
+    if (!api || !projectOpen || githubLogin || !state?.connection?.connected) return;
+    let cancelled = false;
+    void api.request<{ connected: boolean; login: string | null }>("/api/github/status")
+      .then(value => { if (!cancelled) setGithubStatus(value); })
+      .catch(() => { if (!cancelled) setGithubStatus(null); });
+    return () => { cancelled = true; };
+  }, [api, projectOpen, githubLogin, state?.connection?.connected]);
   useEffect(() => {
     let cancelled = false;
     let token = "";
@@ -530,6 +540,7 @@ export default function App() {
               setSelectedChat(null);
               setProjectOpen(false);
               setDirectoryInput("");
+              setRepoInput("");
               return;
             }
           }
@@ -1443,7 +1454,14 @@ export default function App() {
           <p className="subtle small">
             GitHub-Repo-Link eingeben. Änderungen werden nach erfolgreichen Aufträgen automatisch committed und hochgeladen; .gitignore gilt weiterhin.
           </p>
-          <button disabled={!connected} onClick={() => setGithubLogin(true)}>GitHub verbinden</button>
+          <p className="subtle small" role="status">{githubStatus?.connected ? `GitHub verbunden${githubStatus.login ? ` als ${githubStatus.login}` : ""}` : "GitHub noch nicht verbunden"}</p>
+          <button type="button" disabled={!connected} onClick={() => setGithubLogin(true)}>{githubStatus?.connected ? "GitHub-Verbindung ansehen" : "GitHub verbinden"}</button>
+          <form onSubmit={event => { event.preventDefault(); void browse(repoInput); }}>
+            <label>GitHub-Repo-Link
+              <input aria-label="GitHub-Repo-Link" value={repoInput} onChange={event => setRepoInput(event.target.value)} disabled={projectBusy} placeholder="https://github.com/NAME/REPO" />
+            </label>
+            <button className="primary" disabled={!connected || projectBusy || !/^https:\/\/github\.com\//i.test(repoInput.trim())}>{projectBusy ? "Repo wird geladen …" : "Repo hinzufügen"}</button>
+          </form>
           <form
             onSubmit={(event) => {
               event.preventDefault();

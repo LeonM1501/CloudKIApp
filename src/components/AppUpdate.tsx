@@ -185,7 +185,7 @@ export function AppUpdate({ onOpenAssistant }: { onOpenAssistant: () => void }) 
       )}
 
       <div className="update-actions">
-        <button disabled={busy || !status?.native} onClick={() => void check()}>
+        <button disabled={busy || status?.native === false} onClick={() => void check()}>
           <RefreshCw size={16} />
           {busy ? "Prüfe …" : "Nach Update suchen"}
         </button>

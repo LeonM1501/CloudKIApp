@@ -69,7 +69,7 @@ export async function getLiveUpdateStatus(): Promise<LiveUpdateStatus> {
       nextBundleId: null,
       downloadedBundles: [],
     };
-  const LiveUpdate = await plugin();
+  const LiveUpdate = await Promise.race([plugin(), new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Das Update-Modul konnte nicht geladen werden. Bitte die App vollständig schließen und erneut öffnen.")), 8000))]);
   const [current, next, version, downloaded] = await Promise.race([Promise.all([
     LiveUpdate.getCurrentBundle(),
     LiveUpdate.getNextBundle(),
