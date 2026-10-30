@@ -586,6 +586,8 @@ hr {
   border-radius: 13px;
   padding: 13px 17px;
 }
+.activity-group { margin: 10px 0; color: var(--muted); font-size: 12px; }
+.activity-group > summary { cursor: pointer; padding: 5px 0; }
 .tool-event {
   background: var(--surface);
   border: 1px solid var(--border);

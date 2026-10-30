@@ -75,9 +75,11 @@ export function AppUpdate({ onOpenAssistant }: { onOpenAssistant: () => void }) 
 
   useEffect(() => {
     void (async () => {
-      const current = await getLiveUpdateStatus().catch(() => null);
-      setStatus(current);
-      if (current?.native) await check(true);
+      try {
+        const current = await getLiveUpdateStatus();
+        setStatus(current);
+        if (current.native) await check(true);
+      } catch (value) { setError((value as Error).message); }
     })();
   }, []);
 
@@ -118,7 +120,7 @@ export function AppUpdate({ onOpenAssistant }: { onOpenAssistant: () => void }) 
       <div className="update-facts">
         <div>
           <span>Native App</span>
-          <strong>{status?.nativeVersion ?? "wird geladen …"}</strong>
+          <strong>{status?.nativeVersion ?? (error ? "Nicht verfügbar" : "wird geladen …")}</strong>
         </div>
         <div>
           <span>Aktives Web-Bundle</span>
@@ -126,11 +128,11 @@ export function AppUpdate({ onOpenAssistant }: { onOpenAssistant: () => void }) 
         </div>
         <div>
           <span>Status</span>
-          <strong>{status?.native ? "Live-Update bereit" : "Browser-Modus"}</strong>
+          <strong>{status ? (status.native ? "Live-Update bereit" : "Browser-Modus") : "Noch nicht verfügbar"}</strong>
         </div>
       </div>
 
-      {!status?.native && (
+      {status && !status.native && (
         <p className="update-note">
           Im Browser wird bei jedem Laden automatisch der aktuelle Build
           verwendet. Der Update-Button erscheint in der installierten iPad-App.
@@ -142,6 +144,7 @@ export function AppUpdate({ onOpenAssistant }: { onOpenAssistant: () => void }) 
           {error}
         </p>
       )}
+      {error && !status && <button onClick={() => { setError(""); void loadStatus(); }}>Erneut versuchen</button>}
       {message && !error && <p className="update-ok">{message}</p>}
 
       {release?.updateAvailable && (

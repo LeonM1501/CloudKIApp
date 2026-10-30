@@ -70,12 +70,12 @@ export async function getLiveUpdateStatus(): Promise<LiveUpdateStatus> {
       downloadedBundles: [],
     };
   const LiveUpdate = await plugin();
-  const [current, next, version, downloaded] = await Promise.all([
+  const [current, next, version, downloaded] = await Promise.race([Promise.all([
     LiveUpdate.getCurrentBundle(),
     LiveUpdate.getNextBundle(),
     LiveUpdate.getVersionName().catch(() => ({ versionName: APP_VERSION })),
     LiveUpdate.getDownloadedBundles().catch(() => ({ bundleIds: [] })),
-  ]);
+  ]), new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Das Update-Modul antwortet nicht. Bitte die App vollständig schließen und erneut öffnen.")), 8000))]);
   return {
     native: true,
     nativeVersion: version.versionName || APP_VERSION,

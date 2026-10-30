@@ -47,6 +47,7 @@ import { Setup } from "./components/Setup";
 import { RemoteWorkspace } from "./components/RemoteWorkspace";
 import { Terminal } from "./components/Terminal";
 import { AppUpdate } from "./components/AppUpdate";
+import { GitHubLogin } from "./components/GitHubLogin";
 
 function preference<T>(key: string, fallback: T): T {
   try {
@@ -994,7 +995,9 @@ export default function App() {
                         {file.name}
                       </span>
                     ))}
-                    {message.events?.map((event) => (
+                    {Boolean(message.events?.length) && <details className="activity-group">
+                      <summary>Aktivitäten · {message.events!.length}</summary>
+                      {message.events?.map((event) => (
                       <details className="tool-event" key={event.id}>
                         <summary>
                           <Circle size={10} />
@@ -1003,7 +1006,8 @@ export default function App() {
                         </summary>
                         <pre>{event.detail}</pre>
                       </details>
-                    ))}
+                      ))}
+                    </details>}
                     {message.text && (
                       <div className="message-text">{message.text}</div>
                     )}
@@ -1514,13 +1518,7 @@ export default function App() {
         </Modal>
       )}
       {githubLogin && (
-        <Modal title="GitHub verbinden" wide onClose={() => setGithubLogin(false)}>
-          <p className="subtle small">
-            Melde den Home-Server einmal bei GitHub an. Öffne die angezeigte Adresse auf deinem iPad und bestätige den Gerätecode. Danach kannst du deine Repos per Link auswählen und Änderungen hochladen.
-          </p>
-          <a className="button primary" href="https://github.com/login/device" target="_blank" rel="noopener noreferrer">GitHub-Geräteanmeldung öffnen</a>
-          <Terminal api={api} purpose="github" />
-        </Modal>
+        <GitHubLogin api={api} onClose={() => setGithubLogin(false)} />
       )}
       {skills && (
         <Modal title="Skills anhängen" onClose={() => setSkills(null)}>

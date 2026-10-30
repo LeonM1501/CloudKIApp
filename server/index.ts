@@ -11,6 +11,7 @@ import { Store } from "./store.ts";
 import { Providers } from "./providers.ts";
 import { Desktops } from "./desktops.ts";
 import { GitHub, githubLoginCommand, githubRepository } from "./github.ts";
+import { clientPath } from "./clients.ts";
 import {
   absolutePath,
   authorized,
@@ -287,6 +288,11 @@ export async function createBridge(options: Options) {
   app.get("/api/accounts/:id/skills", async (req, res) => {
     const cwd = absolutePath(req.query.cwd ?? remote.connection?.home);
     res.json(await providers.skills(accountFor(req.params.id), cwd));
+  });
+  app.get("/api/github/status", async (_req, res) => {
+    remote.requireClient();
+    const result = await remote.run(`export PATH=${clientPath}; if gh auth status --hostname github.com >/dev/null 2>&1; then gh api user --jq .login; else printf '%s' ''; fi`);
+    res.json({ connected: Boolean(result.stdout.trim()), login: result.stdout.trim() || null });
   });
   app.get("/api/directories", async (req, res) => {
     const path = await remote.canonicalDirectory(
