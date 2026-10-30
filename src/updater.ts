@@ -1,4 +1,5 @@
 import { Capacitor } from "@capacitor/core";
+import { LiveUpdate } from "@capawesome/capacitor-live-update";
 import {
   APP_VERSION,
   IPA_ASSET_NAME,
@@ -42,11 +43,6 @@ function isNative() {
   return Capacitor.isNativePlatform();
 }
 
-async function plugin() {
-  const { LiveUpdate } = await import("@capawesome/capacitor-live-update");
-  return LiveUpdate;
-}
-
 export async function withDeadline<T>(promise: Promise<T>, action: string, timeout = 8000): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -66,7 +62,7 @@ let readiness: Promise<void> | undefined;
 export function markAppReady(): Promise<void> {
   if (!isNative()) return Promise.resolve();
   if (!readiness) {
-    readiness = withDeadline(plugin().then((value) => value.ready()), "App bereitmelden")
+    readiness = withDeadline(LiveUpdate.ready(), "App bereitmelden")
       .then(() => undefined)
       .catch((error) => { readiness = undefined; throw error; });
   }
@@ -80,7 +76,6 @@ export async function getLiveUpdateStatus(): Promise<LiveUpdateStatus> {
       nativeVersion: APP_VERSION,
       currentBundleId: null,
     };
-  const LiveUpdate = await withDeadline(plugin(), "Modul laden");
   if (!Capacitor.isPluginAvailable("LiveUpdate"))
     throw new Error("Das Update-Modul fehlt in dieser iPad-App. Bitte die aktuelle IPA installieren.");
   await markAppReady();
@@ -194,7 +189,6 @@ export async function installUpdate(
     throw new Error(
       "Live-Updates funktionieren nur in der installierten iPad-App. Im Browser wird immer der aktuelle Build geladen.",
     );
-  const LiveUpdate = await withDeadline(plugin(), "Modul laden");
   await markAppReady();
   const listener = await withDeadline(LiveUpdate.addListener(
     "downloadBundleProgress",
@@ -217,7 +211,6 @@ export async function installUpdate(
 export async function resetToBundledVersion() {
   if (!isNative())
     throw new Error("Diese Funktion ist nur in der iPad-App verfügbar.");
-  const LiveUpdate = await withDeadline(plugin(), "Modul laden");
   await withDeadline(LiveUpdate.reset(), "Version zurücksetzen");
   await withDeadline(LiveUpdate.reload(), "App neu laden");
 }
