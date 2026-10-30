@@ -1,4 +1,4 @@
-name: iOS update diagnostics
+name: iPad simulator update diagnostics
 on:
   workflow_dispatch:
 permissions:
@@ -6,35 +6,29 @@ permissions:
 jobs:
   diagnostics:
     runs-on: macos-15
+    timeout-minutes: 18
     steps:
-      - name: Check Swift Foundation bridge behavior
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+      - name: Build simulator app
         run: |
-          cat > /tmp/cloudki-bridge-check.swift <<'SWIFT'
-          import Foundation
-          protocol JSValue {}
-          extension String: JSValue {}
-          extension Bool: JSValue {}
-          extension Int: JSValue {}
-          extension Float: JSValue {}
-          extension Double: JSValue {}
-          extension NSNumber: JSValue {}
-          extension NSNull: JSValue {}
-          extension Array: JSValue {}
-          extension Date: JSValue {}
-          extension Dictionary: JSValue where Key == String, Value == JSValue {}
-          typealias JSObject = [String: JSValue]
-          let samples: [(String, JSObject)] = [
-            ("null_bundle", ["bundleId": NSNull()]),
-            ("string_version", ["versionName": "2.0.0"]),
-            ("empty_array", ["bundleIds": [String]()]),
-            ("string_bundle", ["bundleId": "web-2.0"]),
-            ("ready", ["currentBundleId": NSNull(), "previousBundleId": NSNull(), "rollback": false])
-          ]
-          for (name, value) in samples {
-            let boxed: AnyObject = value as AnyObject
-            print("\(name): JSObject=\(boxed is JSObject) AnyDictionary=\(boxed is [String: Any])")
-          }
-          SWIFT
-          swift /tmp/cloudki-bridge-check.swift
-      - name: Check simulator availability
-        run: xcrun simctl list devices available | head -45
+          set -euo pipefail
+          npm ci
+          npm run build
+          npx cap sync ios
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build_output CODE_SIGNING_ALLOWED=NO build > /tmp/cloudki-simulator-build.log 2>&1 || { tail -n 80 /tmp/cloudki-simulator-build.log; exit 1; }
+      - name: Probe actual native plugin on simulated iPad
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available --json >/tmp/cloudki-devices.json
+          DEVICE=$(python3 -c 'import json; d=json.load(open("/tmp/cloudki-devices.json")); print(next(x["udid"] for runtime,devices in d["devices"].items() if "iOS-18-5" in runtime for x in devices if x["name"] == "iPad Pro 11-inch (M4)"))')
+          xcrun simctl boot "$DEVICE"
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl install "$DEVICE" build_output/Build/Products/Debug-iphonesimulator/App.app
+          xcrun simctl launch "$DEVICE" com.xleonttv.cloudkibridge
+          DATA=$(xcrun simctl get_app_container "$DEVICE" com.xleonttv.cloudkibridge data)
+          for i in $(seq 1 50); do [ -f "$DATA/Documents/cloudki-diagnostic.txt" ] && break; sleep 1; done
+          test -f "$DATA/Documents/cloudki-diagnostic.txt"
+          cat "$DATA/Documents/cloudki-diagnostic.txt"
