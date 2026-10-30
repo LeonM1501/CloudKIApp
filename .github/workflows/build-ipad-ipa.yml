@@ -1,108 +1,40 @@
-name: Build Unsigned iPadOS IPA (Sideloadly / AltStore / SideStore)
-
+name: iOS update diagnostics
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch:
-
 permissions:
-  contents: write
-
-concurrency:
-  group: cloudki-ipa-${{ github.ref }}
-  cancel-in-progress: false
-
+  contents: read
 jobs:
-  build-ipad-ipa:
-    name: Build CloudKIBridge-iPadOS.ipa
+  diagnostics:
     runs-on: macos-15
-    timeout-minutes: 30
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          persist-credentials: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: "22"
-
-      - name: Install Dependencies & Build iPad Web Bundle
+      - name: Check Swift Foundation bridge behavior
         run: |
-          npm ci
-          npm test
-          npm run build
-
-      - name: Sync Capacitor iOS Project
-        run: |
-          if [ ! -d "ios" ]; then
-            npx cap add ios
-          fi
-          npx cap sync ios
-
-      - name: Select newest installed Xcode
-        run: |
-          set -euo pipefail
-          XCODE=$(python3 - <<'PY'
-          import glob, plistlib
-          best = None
-          for path in glob.glob("/Applications/Xcode*.app"):
-              try:
-                  with open(path + "/Contents/version.plist", "rb") as handle:
-                      version = plistlib.load(handle).get("CFBundleShortVersionString", "0")
-                  key = tuple(int(part) for part in version.split("."))
-              except Exception:
-                  continue
-              if best is None or key > best[0]:
-                  best = (key, path)
-          print(best[1] if best else "")
-          PY
-          )
-          if [ -z "$XCODE" ]; then
-            echo "Kein Xcode gefunden." >&2
-            exit 1
-          fi
-          echo "Using $XCODE"
-          "$XCODE/Contents/Developer/usr/bin/xcodebuild" -version
-          sudo xcode-select -s "$XCODE"
-
-      - name: Resolve Swift Packages & Compile Unsigned iPadOS App (Xcode)
-        run: |
-          xcodebuild -resolvePackageDependencies -project ios/App/App.xcodeproj -scheme App
-          xcodebuild -project ios/App/App.xcodeproj \
-            -scheme App \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath build_output \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            AD_HOC_CODE_SIGNING_ALLOWED=YES \
-            clean build
-
-      - name: Package .app into Sideloadable CloudKIBridge-iPadOS.ipa
-        run: |
-          mkdir -p Payload
-          cp -r build_output/Build/Products/Release-iphoneos/App.app Payload/
-          zip -r9 CloudKIBridge-iPadOS.ipa Payload
-
-      - name: Upload CloudKIBridge-iPadOS.ipa Artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: CloudKIBridge-iPadOS-IPA
-          path: CloudKIBridge-iPadOS.ipa
-          retention-days: 30
-
-      - name: Publish IPA as ipa-latest Release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh release view ipa-latest >/dev/null 2>&1 || \
-            gh release create ipa-latest \
-              --title "CloudKI Bridge IPA (latest)" \
-              --notes "Unsignierte iPadOS-IPA. Vor der Installation mit Sideloadly, AltStore, SideStore oder Feather signieren."
-          gh release upload ipa-latest CloudKIBridge-iPadOS.ipa --clobber
+          cat > /tmp/cloudki-bridge-check.swift <<'SWIFT'
+          import Foundation
+          protocol JSValue {}
+          extension String: JSValue {}
+          extension Bool: JSValue {}
+          extension Int: JSValue {}
+          extension Float: JSValue {}
+          extension Double: JSValue {}
+          extension NSNumber: JSValue {}
+          extension NSNull: JSValue {}
+          extension Array: JSValue {}
+          extension Date: JSValue {}
+          extension Dictionary: JSValue where Key == String, Value == JSValue {}
+          typealias JSObject = [String: JSValue]
+          let samples: [(String, JSObject)] = [
+            ("null_bundle", ["bundleId": NSNull()]),
+            ("string_version", ["versionName": "2.0.0"]),
+            ("empty_array", ["bundleIds": [String]()]),
+            ("string_bundle", ["bundleId": "web-2.0"]),
+            ("ready", ["currentBundleId": NSNull(), "previousBundleId": NSNull(), "rollback": false])
+          ]
+          for (name, value) in samples {
+            let boxed: AnyObject = value as AnyObject
+            print("\(name): JSObject=\(boxed is JSObject) AnyDictionary=\(boxed is [String: Any])")
+          }
+          SWIFT
+          swift /tmp/cloudki-bridge-check.swift
+      - name: Check simulator availability
+        run: xcrun simctl list devices available | head -45
