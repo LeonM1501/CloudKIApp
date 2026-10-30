@@ -24,7 +24,6 @@ export interface UpdateRelease {
   releaseUrl: string;
   updateAvailable: boolean;
   currentBundleId: string | null;
-  nextBundleId: string | null;
   nativeVersion: string;
   native: boolean;
 }
@@ -33,8 +32,6 @@ export interface LiveUpdateStatus {
   native: boolean;
   nativeVersion: string;
   currentBundleId: string | null;
-  nextBundleId: string | null;
-  downloadedBundles: string[];
 }
 
 export const repositoryUrl = `https://github.com/${UPDATE_REPOSITORY}`;
@@ -50,14 +47,30 @@ async function plugin() {
   return LiveUpdate;
 }
 
-/** Muss nach jedem Start aufgerufen werden, damit ein defektes Bundle zurückrollt. */
-export async function markAppReady() {
-  if (!isNative()) return;
+export async function withDeadline<T>(promise: Promise<T>, action: string, timeout = 8000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await (await plugin()).ready();
-  } catch {
-    // Ein fehlendes Plugin darf den Start der Web-App nicht blockieren.
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Das Update-Modul antwortet nicht: ${action}. App vollständig schließen und erneut versuchen.`)), timeout);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
+}
+
+let readiness: Promise<void> | undefined;
+/** Muss nach jedem Start aufgerufen werden, damit ein defektes Bundle zurückrollt. */
+export function markAppReady(): Promise<void> {
+  if (!isNative()) return Promise.resolve();
+  if (!readiness) {
+    readiness = withDeadline(plugin().then((value) => value.ready()), "App bereitmelden")
+      .then(() => undefined)
+      .catch((error) => { readiness = undefined; throw error; });
+  }
+  return readiness;
 }
 
 export async function getLiveUpdateStatus(): Promise<LiveUpdateStatus> {
@@ -66,22 +79,19 @@ export async function getLiveUpdateStatus(): Promise<LiveUpdateStatus> {
       native: false,
       nativeVersion: APP_VERSION,
       currentBundleId: null,
-      nextBundleId: null,
-      downloadedBundles: [],
     };
-  const LiveUpdate = await Promise.race([plugin(), new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Das Update-Modul konnte nicht geladen werden. Bitte die App vollständig schließen und erneut öffnen.")), 8000))]);
-  const [current, next, version, downloaded] = await Promise.race([Promise.all([
-    LiveUpdate.getCurrentBundle(),
-    LiveUpdate.getNextBundle(),
-    LiveUpdate.getVersionName().catch(() => ({ versionName: APP_VERSION })),
-    LiveUpdate.getDownloadedBundles().catch(() => ({ bundleIds: [] })),
-  ]), new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Das Update-Modul antwortet nicht. Bitte die App vollständig schließen und erneut öffnen.")), 8000))]);
+  const LiveUpdate = await withDeadline(plugin(), "Modul laden");
+  if (!Capacitor.isPluginAvailable("LiveUpdate"))
+    throw new Error("Das Update-Modul fehlt in dieser iPad-App. Bitte die aktuelle IPA installieren.");
+  await markAppReady();
+  const [current, version] = await Promise.all([
+    withDeadline(LiveUpdate.getCurrentBundle(), "aktives Bundle lesen"),
+    withDeadline(LiveUpdate.getVersionName(), "App-Version lesen"),
+  ]);
   return {
     native: true,
     nativeVersion: version.versionName || APP_VERSION,
     currentBundleId: current.bundleId,
-    nextBundleId: next.bundleId,
-    downloadedBundles: downloaded.bundleIds,
   };
 }
 
@@ -171,7 +181,6 @@ export async function checkForUpdate(): Promise<UpdateRelease> {
     releaseUrl: release.html_url ?? liveUpdateReleaseUrl,
     updateAvailable: status.currentBundleId !== manifest.bundleId,
     currentBundleId: status.currentBundleId,
-    nextBundleId: status.nextBundleId,
     nativeVersion: status.nativeVersion,
     native: status.native,
   };
@@ -185,20 +194,21 @@ export async function installUpdate(
     throw new Error(
       "Live-Updates funktionieren nur in der installierten iPad-App. Im Browser wird immer der aktuelle Build geladen.",
     );
-  const LiveUpdate = await plugin();
-  const listener = await LiveUpdate.addListener(
+  const LiveUpdate = await withDeadline(plugin(), "Modul laden");
+  await markAppReady();
+  const listener = await withDeadline(LiveUpdate.addListener(
     "downloadBundleProgress",
     (event) => onProgress?.(Math.max(0, Math.min(1, event.progress))),
-  );
+  ), "Download vorbereiten");
   try {
-    await LiveUpdate.downloadBundle({
+    await withDeadline(LiveUpdate.downloadBundle({
       url: release.downloadUrl,
       bundleId: release.manifest.bundleId,
       checksum: release.manifest.checksum,
-    });
-    await LiveUpdate.setNextBundle({ bundleId: release.manifest.bundleId });
+    }), "Update herunterladen", 120000);
+    await withDeadline(LiveUpdate.setNextBundle({ bundleId: release.manifest.bundleId }), "Update aktivieren");
     onProgress?.(1);
-    await LiveUpdate.reload();
+    await withDeadline(LiveUpdate.reload(), "App neu laden");
   } finally {
     await listener.remove();
   }
@@ -207,7 +217,7 @@ export async function installUpdate(
 export async function resetToBundledVersion() {
   if (!isNative())
     throw new Error("Diese Funktion ist nur in der iPad-App verfügbar.");
-  const LiveUpdate = await plugin();
-  await LiveUpdate.reset();
-  await LiveUpdate.reload();
+  const LiveUpdate = await withDeadline(plugin(), "Modul laden");
+  await withDeadline(LiveUpdate.reset(), "Version zurücksetzen");
+  await withDeadline(LiveUpdate.reload(), "App neu laden");
 }

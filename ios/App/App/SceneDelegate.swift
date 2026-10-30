@@ -2,33 +2,26 @@ import UIKit
 import Capacitor
 
 class DiagnosticBridgeViewController: CAPBridgeViewController {
+    private func save(_ name: String, script: String) {
+        webView?.evaluateJavaScript(script) { value, error in
+            let output = String(describing: value ?? error?.localizedDescription ?? "no response")
+            let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(name)
+            try? output.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
     override func capacitorDidLoad() {
         super.capacitorDidLoad()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-            self?.webView?.evaluateJavaScript("""
-                window.__cloudkiDiagnostic = 'running';
-                void (async () => {
-                  const cap = window.Capacitor;
-                  const report = {platform: cap?.getPlatform(), available: cap?.isPluginAvailable('LiveUpdate')};
-                  const plugin = cap?.Plugins?.LiveUpdate;
-                  if (!plugin) { report.error = 'plugin not registered'; window.__cloudkiDiagnostic = JSON.stringify(report); return; }
-                  for (const name of ['ready','getCurrentBundle','getNextBundle','getVersionName','getDownloadedBundles']) {
-                    report[name] = await Promise.race([
-                      plugin[name]().then(value => ({ok:true,value}), error => ({error:String(error)})),
-                      new Promise(resolve => setTimeout(() => resolve({timeout:true}), 2000))
-                    ]);
-                  }
-                  window.__cloudkiDiagnostic = JSON.stringify(report);
-                })();
-                'started';
-                """, completionHandler: nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            self?.webView?.evaluateJavaScript("Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Nach Update suchen'))?.click()", completionHandler: nil)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 25) { [weak self] in
-            self?.webView?.evaluateJavaScript("window.__cloudkiDiagnostic || 'missing'") { value, error in
-                let output = String(describing: value ?? error?.localizedDescription ?? "no response")
-                let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("cloudki-diagnostic.txt")
-                try? output.write(to: url, atomically: true, encoding: .utf8)
-            }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 28) { [weak self] in
+            self?.save("cloudki-before.txt", script: "document.body.innerText")
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 90) { [weak self] in
+            self?.webView?.evaluateJavaScript("window.__simCurrent='waiting'; window.Capacitor.Plugins.LiveUpdate.getCurrentBundle().then(x => window.__simCurrent=JSON.stringify(x), e => window.__simCurrent=String(e)); 'started'", completionHandler: nil)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 96) { [weak self] in
+            self?.save("cloudki-after.txt", script: "JSON.stringify({stored:sessionStorage.getItem('cloudki.simulator.result'),current:window.__simCurrent})")
         }
     }
 }

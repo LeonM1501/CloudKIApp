@@ -1,4 +1,4 @@
-name: iPad simulator update diagnostics
+name: iPad simulator live-update verification
 on:
   workflow_dispatch:
 permissions:
@@ -19,7 +19,7 @@ jobs:
           npm run build
           npx cap sync ios
           xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build_output CODE_SIGNING_ALLOWED=NO build > /tmp/cloudki-simulator-build.log 2>&1 || { tail -n 80 /tmp/cloudki-simulator-build.log; exit 1; }
-      - name: Probe actual native plugin on simulated iPad
+      - name: Check and install the real GitHub release on a simulated iPad
         run: |
           set -euo pipefail
           xcrun simctl list devices available --json >/tmp/cloudki-devices.json
@@ -29,6 +29,20 @@ jobs:
           xcrun simctl install "$DEVICE" build_output/Build/Products/Debug-iphonesimulator/App.app
           xcrun simctl launch "$DEVICE" com.xleonttv.cloudkibridge
           DATA=$(xcrun simctl get_app_container "$DEVICE" com.xleonttv.cloudkibridge data)
-          for i in $(seq 1 50); do [ -f "$DATA/Documents/cloudki-diagnostic.txt" ] && break; sleep 1; done
-          test -f "$DATA/Documents/cloudki-diagnostic.txt"
-          cat "$DATA/Documents/cloudki-diagnostic.txt"
+          for i in $(seq 1 140); do [ -f "$DATA/Documents/cloudki-after.txt" ] && break; sleep 1; done
+          test -f "$DATA/Documents/cloudki-before.txt"
+          test -f "$DATA/Documents/cloudki-after.txt"
+          echo 'UI before installation:'
+          cat "$DATA/Documents/cloudki-before.txt"
+          echo 'Status after installation:'
+          cat "$DATA/Documents/cloudki-after.txt"
+          python3 - "$DATA/Documents/cloudki-before.txt" "$DATA/Documents/cloudki-after.txt" <<'PY'
+          import json, sys
+          ui=open(sys.argv[1]).read()
+          assert 'Live-Update bereit' in ui, 'Updater did not become ready in the UI'
+          assert 'ist verfügbar' in ui or 'Update installieren' in ui, 'Update check did not display an available update'
+          data=json.load(open(sys.argv[2])); stored=json.loads(data['stored']); current=json.loads(data['current'])
+          assert 'error' not in stored, stored
+          assert current['bundleId'] == stored['targetBundle'], (stored,current)
+          print('Real GitHub update downloaded, activated and reloaded successfully.')
+          PY
