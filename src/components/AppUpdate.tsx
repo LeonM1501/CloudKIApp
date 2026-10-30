@@ -39,34 +39,27 @@ export function AppUpdate({ onOpenAssistant }: { onOpenAssistant: () => void }) 
   const loadStatus = async () => {
     try {
       setStatus(await getLiveUpdateStatus());
+      setError("");
     } catch (value) {
       setError((value as Error).message);
     }
   };
 
-  const check = async (quiet = false) => {
+  const check = async () => {
     setBusy(true);
-    if (!quiet) setError("");
+    setError("");
+    setMessage("");
     try {
       const result = await checkForUpdate();
       setRelease(result);
-      setStatus((previous) =>
-        previous
-          ? {
-              ...previous,
-              currentBundleId: result.currentBundleId,
-              nextBundleId: result.nextBundleId,
-            }
-          : previous,
+      setStatus({ native: result.native, nativeVersion: result.nativeVersion, currentBundleId: result.currentBundleId });
+      setMessage(
+        result.updateAvailable
+          ? `Version ${result.manifest.version} ist verfügbar.`
+          : "Die App ist auf dem neuesten Web-Stand.",
       );
-      if (!quiet)
-        setMessage(
-          result.updateAvailable
-            ? `Version ${result.manifest.version} ist verfügbar.`
-            : "Die App ist auf dem neuesten Web-Stand.",
-        );
     } catch (value) {
-      if (!quiet) setError((value as Error).message);
+      setError((value as Error).message);
       setRelease(null);
     } finally {
       setBusy(false);
@@ -74,13 +67,7 @@ export function AppUpdate({ onOpenAssistant }: { onOpenAssistant: () => void }) 
   };
 
   useEffect(() => {
-    void (async () => {
-      try {
-        const current = await getLiveUpdateStatus();
-        setStatus(current);
-        if (current.native) await check(true);
-      } catch (value) { setError((value as Error).message); }
-    })();
+    void loadStatus();
   }, []);
 
   const install = async () => {
@@ -124,7 +111,7 @@ export function AppUpdate({ onOpenAssistant }: { onOpenAssistant: () => void }) 
         </div>
         <div>
           <span>Aktives Web-Bundle</span>
-          <strong>{status?.currentBundleId ?? "Mitgeliefertes Bundle"}</strong>
+          <strong>{status ? (status.currentBundleId ?? "Mitgeliefertes Bundle") : (error ? "Nicht verfügbar" : "wird geprüft …")}</strong>
         </div>
         <div>
           <span>Status</span>
@@ -139,12 +126,6 @@ export function AppUpdate({ onOpenAssistant }: { onOpenAssistant: () => void }) 
         </p>
       )}
 
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
-      {error && !status && <button onClick={() => { setError(""); void loadStatus(); }}>Erneut versuchen</button>}
       {message && !error && <p className="update-ok">{message}</p>}
 
       {release?.updateAvailable && (
@@ -196,6 +177,8 @@ export function AppUpdate({ onOpenAssistant }: { onOpenAssistant: () => void }) 
           </button>
         )}
       </div>
+      {error && <p className="error" role="alert">{error}</p>}
+      {error && !status && <button onClick={() => { setError(""); void loadStatus(); }}>Modul erneut prüfen</button>}
 
       <h3>Update-Assistent</h3>
       <p className="subtle">

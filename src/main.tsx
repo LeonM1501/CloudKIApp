@@ -12,4 +12,4 @@ createRoot(document.getElementById("root")!).render(
 
 // Nach dem ersten Rendern bestätigen, dass das aktive Web-Bundle funktioniert.
 // Bleibt die Bestätigung aus, rollt das Live-Update-Plugin automatisch zurück.
-void markAppReady();
+void markAppReady().catch(() => {});
