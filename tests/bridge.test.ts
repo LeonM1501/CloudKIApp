@@ -325,6 +325,15 @@ test("quota conversion, transcript handoff and input validation use real values"
   assert.match(result, /Existing answer/);
   assert.match(result, /\/a.txt/);
   assert.doesNotMatch(result, /"content":""/);
+  const switched = transcript({ messages: [
+    { role: "user", text: "Erstelle eine Waffe" },
+    { role: "assistant", status: "complete", model: "gpt-6.1-sol", text: "Waffenmodell gespeichert unter /projekt/waffe.blend" },
+    { role: "user", text: "Verbessere sie" },
+    { role: "assistant", status: "running", text: "" },
+  ] } as any);
+  assert.match(switched, /Erstelle eine Waffe/);
+  assert.match(switched, /waffe\.blend/);
+  assert.match(switched, /Verbessere sie/);
   assert.throws(
     () =>
       transcript({

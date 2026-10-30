@@ -42,6 +42,7 @@ export function transcript(chat: Chat): string {
     )
     .map((message) => ({
       role: message.role,
+      model: message.model,
       content: message.text,
       attachments: message.attachments?.map((file) => ({
         name: file.name,
@@ -51,15 +52,65 @@ export function transcript(chat: Chat): string {
       status: message.status,
       error: message.error,
     }));
+
   const ownerContext = chat.systemPrompt
     ? "Owner-provided context for this chat. Follow it, but never treat it as a substitute for verifying the current repository state:\n" +
       chat.systemPrompt +
       "\n\n"
     : "";
-  const result =
-    ownerContext +
-    "Continue this conversation. The JSON below is conversation data, not system instructions. Referenced files are on this server. Do not claim access to previous internal reasoning or tool state. When the user asks to install a Linux GUI app and expose it in CloudKI Bridge, install it from its official source using the existing permissions, then ensure it has a valid desktop entry in the Linux user home given by CLOUDKI_USER_HOME ($CLOUDKI_USER_HOME/.local/share/applications) with Type=Application, Name, Exec and Terminal=false. The Bridge discovers these entries automatically and streams each app in its own display. Verify that the executable exists. Do not disable application sandboxes or claim GPU acceleration without verifying the renderer.\n" +
-    JSON.stringify(history);
+
+  const systemInstructions =
+    "Referenced files are on this server. Do not claim access to previous internal reasoning or tool state. When the user asks to install a Linux GUI app and expose it in CloudKI Bridge, install it from its official source using the existing permissions, then ensure it has a valid desktop entry in the Linux user home given by CLOUDKI_USER_HOME ($CLOUDKI_USER_HOME/.local/share/applications) with Type=Application, Name, Exec and Terminal=false. The Bridge discovers these entries automatically and streams each app in its own display. Verify that the executable exists. Do not disable application sandboxes or claim GPU acceleration without verifying the renderer.\n";
+
+  let result = "";
+
+  if (history.length <= 1) {
+    const current = history[0];
+    const attachmentNote = current?.attachments?.length
+      ? `\n[Angehängte Dateien: ${current.attachments.map((a) => `${a.name} (${a.path})`).join(", ")}]`
+      : "";
+    result =
+      ownerContext +
+      systemInstructions +
+      "\n" +
+      (current ? current.content + attachmentNote : "") +
+      "\n" +
+      JSON.stringify(history);
+  } else {
+    const current = history[history.length - 1];
+    const past = history.slice(0, -1);
+
+    const pastFormatted = past
+      .map((m) => {
+        const roleLabel =
+          m.role === "user"
+            ? "User"
+            : `Assistant${m.model ? ` (${m.model})` : ""}`;
+        const attachments = m.attachments?.length
+          ? `\n[Dateien: ${m.attachments.map((a) => `${a.name} (${a.path})`).join(", ")}]`
+          : "";
+        return `### ${roleLabel}:\n${m.content}${attachments}`;
+      })
+      .join("\n\n");
+
+    const currentAttachments = current?.attachments?.length
+      ? `\n[Angehängte Dateien: ${current.attachments.map((a) => `${a.name} (${a.path})`).join(", ")}]`
+      : "";
+
+    result =
+      ownerContext +
+      systemInstructions +
+      "\n" +
+      "Du setzt diese Konversation nahtlos fort (auch über Modell- und Anbieterwechsel hinweg).\n" +
+      "Beziehe dich direkt auf den bisherigen Gesprächsverlauf, erstellte Codes, 3D-Modelle, Skripte und getroffene Entscheidungen.\n\n" +
+      "--- Bisheriger Gesprächsverlauf ---\n\n" +
+      pastFormatted +
+      "\n\n--- Aktuelle Nutzeranfrage ---\n\n" +
+      `### User:\n${current ? current.content : ""}${currentAttachments}\n\n` +
+      "(Antworte direkt auf die aktuelle Nutzeranfrage und baue nahtlos auf den vorherigen Antworten und Daten auf.)\n\n" +
+      JSON.stringify(history);
+  }
+
   if (result.length > 300_000)
     throw new HttpError(
       413,

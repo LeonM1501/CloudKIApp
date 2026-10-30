@@ -49,7 +49,7 @@ export class Store {
           if (message.status === "running") {
             message.status = "failed";
             message.error =
-              "Bridge wurde während der Antwort beendet. Bitte erneut senden.";
+              "Die Bridge wurde während der Antwort neu gestartet. Der letzte gespeicherte Zwischenstand bleibt erhalten; bitte die Aufgabe erneut senden.";
           }
     } catch (error: any) {
       if (error.code !== "ENOENT") throw error;

@@ -48,7 +48,7 @@ Du bist der technische Update-Assistent für **CloudKI Bridge**. Du hilfst dem B
    ```
 4. GitHub Actions startet automatisch:
    - `publish-live-update.yml` baut `dist/`, zippt `cloudki-web.zip`, berechnet SHA-256 und aktualisiert das Release `web-latest`.
-   - `build-ipad-ipa.yml` baut parallel die IPA und aktualisiert `ipa-latest`.
+   - Der IPA-Workflow wird bei einem Push nicht mehr automatisch gestartet; eine IPA kann bei Bedarf manuell gebaut werden.
 5. In der iPad-App: **Einstellungen → App-Update → Nach Update suchen → Update installieren & neu laden**.
 6. Nach dem Reload bleibt die Bridge-Sitzung über `sessionStorage` erhalten. Falls nicht, Bridge-Schlüssel erneut eingeben.
 

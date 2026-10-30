@@ -591,10 +591,15 @@ export async function createBridge(options: Options) {
       throw error;
     }
     let lastUpdate = 0;
+    let lastSaved = 0;
     const update = () => {
       if (Date.now() - lastUpdate > 80 || assistant.status !== "running") {
         lastUpdate = Date.now();
         emit("chat", chat);
+      }
+      if (Date.now() - lastSaved > 1000) {
+        lastSaved = Date.now();
+        void store.save().catch(() => emit("error", { message: "Zwischenstand konnte nicht gespeichert werden." }));
       }
     };
     res.status(202).json(chat);
